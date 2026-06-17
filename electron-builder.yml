@@ -1,0 +1,57 @@
+appId: com.vibecoder.app
+productName: BrainDead
+directories:
+  buildResources: build
+  output: release
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintrc,.prettierrc,tsconfig.json,tsconfig.*.json}'
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+# Stała nazwa pliku z architekturą — żeby linki w README były przewidywalne.
+artifactName: ${productName}-${version}-${arch}.${ext}
+mac:
+  target:
+    # Dwa Maki: Apple Silicon (arm64) i Intel (x64).
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  # Podpis ad-hoc (bez Developer ID) — wystarcza, by appkę dało się przeciągnąć do Applications i odpalić
+  # (Apple Silicon wymaga przynajmniej ad-hoc). Przy pierwszym starcie: prawy klik → Otwórz, albo
+  # `xattr -dr com.apple.quarantine /Applications/BrainDead.app`.
+  identity: null
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+linux:
+  # AppImage = uniwersalny; deb (Ubuntu/Debian), rpm (Fedora/RHEL), pacman (Arch/Manjaro).
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+    - target: pacman
+      arch:
+        - x64
+  icon: build/icon.png
+  category: Development
+  maintainer: pinatq
+  synopsis: Tiling multiplexer of terminals, browsers, file viewer/explorer and AI CLIs
+npmRebuild: true

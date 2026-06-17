@@ -1,0 +1,43 @@
+{
+  "name": "vibe-coder",
+  "version": "0.0.1",
+  "description": "Kafelkowy multiplexer terminali + przeglądarka (Electron)",
+  "main": "./out/main/index.js",
+  "author": "pinatq",
+  "license": "MIT",
+  "homepage": "https://github.com/pinatq/braindead",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "package": "electron-vite build && electron-builder",
+    "postinstall": "electron-builder install-app-deps && node scripts/fix-pty-perms.cjs",
+    "rebuild": "electron-rebuild -f -w node-pty"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "docx-preview": "^0.3.7",
+    "node-pty": "^1.0.0",
+    "pdfjs-dist": "^6.0.227",
+    "ssh2": "^1.17.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/ssh2": "^1.15.5",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}
