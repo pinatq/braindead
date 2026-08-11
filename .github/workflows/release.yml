@@ -34,10 +34,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      # node-pty jest natywny — na Linuksie potrzebuje nagłówków i narzędzi pakietowania.
+      # Narzędzia pakietowania: rpm dla Fedory, bsdtar (libarchive-tools) dla paczki pacman —
+      # bez niego target Archa pada na "bsdtar: exit code 127".
       - name: Zależności systemowe (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
 
       - run: npm ci
 
