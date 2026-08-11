@@ -120,7 +120,8 @@ function registerIpc(): void {
     const buffer = pty.ensure(id, opts.cols, opts.rows, opts.cwd, { agent: opts.agent })
     // Odtworzenie historii tylko do okna, które o nią poprosiło.
     if (buffer) e.sender.send(IPC.ptyData, { id, data: buffer })
-    return { existed: buffer.length > 0 }
+    // `alt` — czy w sesji działa program pełnoekranowy (vim mode ma wtedy odpuścić).
+    return { existed: buffer.length > 0, alt: pty.isAlt(id) }
   })
   ipcMain.on(IPC.ptyInput, (_e, id: string, data: string) => pty.write(id, data))
   ipcMain.on(IPC.ptyResize, (_e, id: string, cols: number, rows: number) =>

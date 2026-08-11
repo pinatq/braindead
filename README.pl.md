@@ -5,7 +5,7 @@
 Desktopowy, **kafelkowy multiplexer** w stylu TradingView: w jednym oknie układasz obok siebie
 **terminale systemowe**, **przeglądarki**, **viewer plików** (PDF / obrazy / docx / tekst), **eksplorator
 plików** (lokalny i przez SSH/SFTP) oraz **agentów AI z linii poleceń** (Claude Code, Gemini, Codex,
-Aider, Goose, opencode, Amazon Q). Całość jest klawiaturocentryczna — z opcjonalnym, w pełni
+Aider, Kimi Code, Goose, opencode, Amazon Q). Całość jest klawiaturocentryczna — z opcjonalnym, w pełni
 remapowalnym **trybem vim** — i ma numerowane przestrzenie robocze, notatki, globalne wyszukiwanie
 (⌘F), „Autopilota" oraz monitor RAM z trybem oszczędnym.
 
@@ -30,22 +30,22 @@ Kliknij swoją platformę i zainstaluj jak każdą inną aplikację.
 
 | Platforma | Pobierz | Instalacja |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead-0.0.1-arm64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.1-arm64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **macOS — Intel** (x86_64) | [BrainDead-0.0.1-x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.1-x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **Windows 10/11** (x64) | [BrainDead-0.0.1-x64.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.1-x64.exe) | uruchom instalator, wybierz folder, dalej → dalej |
-| **Linux — AppImage** (każda dystrybucja) | [BrainDead-0.0.1-x86_64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.1-x86_64.AppImage) | `chmod +x BrainDead-*.AppImage && ./BrainDead-*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead-0.0.2-arm64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-arm64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **macOS — Intel** (x86_64) | [BrainDead-0.0.2-x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **Windows 10/11** (x64) | [BrainDead-0.0.2-x64.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x64.exe) | uruchom instalator, wybierz folder, dalej → dalej |
+| **Linux — AppImage** (każda dystrybucja) | [BrainDead-0.0.2-x86_64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x86_64.AppImage) | `chmod +x BrainDead-*.AppImage && ./BrainDead-*.AppImage` |
 
 ### Linux — przez menedżer pakietów
 
 ```bash
 # Arch / Manjaro
-sudo pacman -U BrainDead-0.0.1-x64.pacman
+sudo pacman -U BrainDead-0.0.2-x64.pacman
 
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead-0.0.1-amd64.deb      # albo:  sudo dpkg -i BrainDead-0.0.1-amd64.deb
+sudo apt install ./BrainDead-0.0.2-amd64.deb      # albo:  sudo dpkg -i BrainDead-0.0.2-amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.0.1-x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.0.1-x86_64.rpm
+sudo dnf install ./BrainDead-0.0.2-x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.0.2-x86_64.rpm
 ```
 
 > **Uwaga macOS** — build **nie jest** podpisany Developer ID (tylko podpis ad-hoc). Przy pierwszym
@@ -56,6 +56,12 @@ sudo dnf install ./BrainDead-0.0.1-x86_64.rpm     # albo:  sudo rpm -i BrainDead
 >
 > Wszystkie instalatory powstają z `npm run package` (patrz [Skrypty i build](#skrypty-i-build));
 > dokładne nazwy plików lądują w `release/`.
+
+> **BSD** — binarki nie ma i nie będzie: Electron nie wydaje oficjalnych buildów dla FreeBSD/OpenBSD,
+> więc nie ma z czego uczciwie zrobić paczki. Na FreeBSD możesz uruchomić projekt ze źródeł w oparciu
+> o port `devel/electron*` — zainstaluj port i Node, potem `npm install && npm run build` i odpal
+> systemowym Electronem (`electron .` w repo, bo `npm start` próbowałby pobrać niedostępną binarkę
+> upstreamu). To teren nieprzetestowany.
 
 ### Aktualizacje
 
@@ -149,6 +155,20 @@ skrótem, albo cyklem (terminal → przeglądarka → viewer → eksplorator →
 bufor historii), więc po powrocie do terminala masz całą historię. Dziewiczy terminal (bez żadnej
 historii) jest zwalniany przy opuszczeniu, żeby nie marnować zasobów.
 
+Każdy panel — niezależnie od trybu — ma dwie kontrolki, które nie wchodzą w drogę, dopóki nie najedziesz
+na panel:
+
+- **Zoom (⤢)**, prawy górny róg. Rozciąga panel na **całą siatkę paneli** (zoom jak w tmuxie); górny
+  pasek, statusline i panel notatek zostają na miejscu, a pozostałe panele zostają zamontowane i działają
+  dalej pod spodem. W zoomie przycisk zmienia się w **⤡** i jest podświetlony. Przywracasz kolejnym
+  klikiem, bindem `pane.zoomExit` albo przejściem na inny panel **z klawiatury** (⌘1–⌘9, `Ctrl+Tab`,
+  `Ctrl-w h/j/k/l`) — zoomowany panel zasłania resztę, więc kliknięciem ich nie wybierzesz. Zoom zdejmuje
+  też zmiana układu i przełączenie przestrzeni. To stan runtime: nie zapisuje się do `state.json` i znika
+  po restarcie. Oba bindy — `pane.zoom` i `pane.zoomExit` — są **bez domyślnego klawisza**; przypisujesz
+  je w ustawieniach → Skróty.
+- **Nazwa panelu (✎)**, lewy górny róg. Klik pozwala nazwać panel (nazwa zapisuje się z przestrzenią).
+  W nienazwanym panelu chip jest niewidoczny, dopóki nie najedziesz na panel.
+
 ### 1. Terminal (`>_`)
 - Prawdziwy terminal systemowy (node-pty + xterm.js), Twoja domyślna powłoka.
 - Pełny scrollback trzymany w pamięci (do ~200 kB na sesję — element trybu oszczędnego).
@@ -192,7 +212,7 @@ Przeglądarka katalogów — **lokalna oraz zdalna przez SSH/SFTP**:
 
 ### 5. Agent AI (`🤖`)
 Piąty tryb: uruchamia w panelu **dowolne terminalowe CLI AI** — Claude Code, Gemini CLI, Codex CLI,
-Aider, Goose, opencode, Amazon Q. Wiele kont, **każde w pełni izolowane** (osobny folder konfiguracji),
+Aider, Kimi Code, Goose, opencode, Amazon Q. Wiele kont, **każde w pełni izolowane** (osobny folder konfiguracji),
 więc różne konta działają równolegle w różnych panelach i nie gryzą się ze sobą. Może działać lokalnie
 **albo na zdalnym serwerze przez SSH**. Pełen opis: [Agenci AI](#agenci-ai--szczegóły).
 
@@ -290,6 +310,15 @@ Domyślne keymapy (wszystkie do zmiany):
 Wyjście z INSERT do NORMAL w terminalu: do wyboru **`Esc`** lub **podwójny `Esc`** (ustawienia → Vim).
 Statusline na dole pokazuje tryb (INSERT/NORMAL) aktywnego terminala i stan prefiksu `Ctrl-w`.
 
+**Programy pełnoekranowe (nvim, htop, lazygit, less).** W momencie, gdy program przełącza terminal na
+*alternate screen*, tryb vim odpuszcza: panel wychodzi z NORMAL, a wszystkie klawisze lecą prosto do
+programu — `hjkl`, `Esc`, `i`, `y` nie są przechwytywane. Stan śledzi proces główny bezpośrednio ze
+strumienia PTY (DECSET `?1049h/l`, `?1047`, `?47`) i jest nadrzędny wobec typu bufora xterma, więc
+zostaje poprawny po przemontowaniu panelu (zmiana trybu panelu, przestrzeni, restart okna) — czyli
+dokładnie tam, gdzie stare sprawdzanie po buforze się myliło i aplikacja głuchła na własne bindy. Po
+powrocie do panelu z działającym programem BrainDead szarpie rozmiarem, żeby program się przerysował.
+Po wyjściu z programu NORMAL i copy-mode wracają.
+
 ---
 
 ## Skróty klawiszowe
@@ -299,7 +328,7 @@ Globalne, **konfigurowalne** skróty (ustawienia → **Shortcuts**). Bind to kom
 
 | Grupa | Akcje | Domyślnie |
 |---|---|---|
-| **Panes** | Focus panelu 1–16; **Switch panes** (tap = ostatni, hold = cykl) MRU; następny/poprzedni wg indeksu | ⌘1–⌘9, ⌘0 (10), MRU = `Ctrl+Tab` |
+| **Panes** | Focus panelu 1–16; **Switch panes** (tap = ostatni, hold = cykl) MRU; następny/poprzedni wg indeksu; **fullscreen panelu** (`pane.zoom`) / **wyjście z fullscreena** (`pane.zoomExit`) | ⌘1–⌘9, ⌘0 (10), MRU = `Ctrl+Tab`; obie akcje fullscreena startują bez klawisza |
 | **Pane mode** | Aktywny panel → Terminal / Browser / Viewer / **Claude/Agent**; cykl trybów | puste (cykl/tryby do ustawienia) |
 | **Browser tabs** | Nowa / zamknij / następna / poprzednia karta; **toggle auto-scroll** | ⌘T, ⌘W, ⌘⇧], ⌘⇧[ |
 | **Panels** | Toggle notatek; picker układów; ustawienia | puste |
@@ -326,12 +355,20 @@ Globalne, **konfigurowalne** skróty (ustawienia → **Shortcuts**). Bind to kom
 | Claude Code | `claude` | `CLAUDE_CONFIG_DIR` | `ANTHROPIC_API_KEY` | `curl …claude.ai/install.sh \| bash` |
 | Gemini CLI | `gemini` | `XDG_CONFIG_HOME` | `GEMINI_API_KEY` | `npm i -g @google/gemini-cli` |
 | Codex CLI | `codex` | `CODEX_HOME` | `OPENAI_API_KEY` | `npm i -g @openai/codex` |
+| Kimi Code | `kimi` | `XDG_CONFIG_HOME` | `MOONSHOT_API_KEY` | `curl …code.kimi.com/install.sh \| bash` |
 | Aider | `aider` | (klucz API) | `OPENAI_API_KEY` | `pip install -U aider-chat` |
 | Goose | `goose` | `XDG_CONFIG_HOME` | — | ręcznie |
 | opencode | `opencode` | `XDG_CONFIG_HOME` | — | ręcznie |
 | Amazon Q | `q` | — | — | ręcznie |
 
 (Antigravity / Cursor / Windsurf są celowo poza listą — to IDE, nie CLI.)
+
+Kimi Code autoryzujesz przez `/login` (OAuth w przeglądarce) albo `MOONSHOT_API_KEY`; na Windowsie
+instalator to `irm https://code.kimi.com/install.ps1 | iex`.
+
+> **Izolacja configu przy SSH** — skopiowany token podchwytują na zdalnym hoście tylko narzędzia z własną
+> zmienną katalogu configu (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). Te oparte o XDG — Gemini, Kimi Code,
+> Goose, opencode — używają na serwerze domyślnej lokalizacji configu, więc logujesz się tam raz.
 
 **Konta (profile):** w ustawieniach dodajesz konta; każdy wiersz = nazwa → wybór narzędzia → sposób
 autoryzacji (**login** OAuth przez CLI **albo** klucz **API**) → opcjonalny **stały folder lokalny**
@@ -425,7 +462,8 @@ aplikacji (`app.getPath('userData')`):
   przeglądarki, osobne dla każdej przestrzeni roboczej.
 
 Dzięki temu spakowanie repo nie ujawnia notatek, plików, tokenów ani historii przeglądania. Repo zawiera
-tylko kod i `build/icon.png` (logo). Operacje nieodwracalne (ubicie panelu/przestrzeni, usuwanie plików,
+tylko kod oraz zasoby ikony: `build/icon-source.png` (grafika źródłowa) i `build/icon.png` (wygenerowane
+logo, odtwarzalne komendą `python3 scripts/make-icon.py`). Operacje nieodwracalne (ubicie panelu/przestrzeni, usuwanie plików,
 wysłanie tokenu na zdalny host) są **zawsze za potwierdzeniem**.
 
 ---
@@ -436,7 +474,8 @@ wysłanie tokenu na zdalny host) są **zawsze za potwierdzeniem**.
 src/
   main/        proces główny (Node/Electron)
     index.ts       okno, rejestracja handlerów IPC
-    pty.ts         PtyManager — procesy PTY (node-pty), bufor historii, sesje agentów (lokalne + SSH)
+    pty.ts         PtyManager — procesy PTY (node-pty), bufor historii, śledzenie alternate screen per
+                   sesja (`pty:alt` — to trzyma tryb vim z dala od nvima), sesje agentów (lokalne + SSH)
     files.ts       operacje na plikach, dialogi (open file / open dir), zapisy
     ssh.ts         parsowanie komendy ssh (host/user/port/klucz, ~/.ssh/config), SFTP
     agents.ts      status/instalacja CLI agentów; agentSshSync (kopia configu + zdalna instalacja)
@@ -461,8 +500,14 @@ src/
     agents.ts      rejestr narzędzi AI (AGENT_TOOLS)
     vimKeys.ts     definicje akcji vima + matchVimKey/captureVimKey
 scripts/
-  fix-pty-perms.cjs  naprawa uprawnień spawn-helper node-pty
-  smoke.cjs          smoke test (liczniki uchwytów/listenerów)
+  fix-pty-perms.cjs   naprawa uprawnień spawn-helper node-pty
+  smoke.cjs           smoke test (liczniki uchwytów/listenerów)
+  alt-check.js        self-check śledzenia alternate screen (lustro main/pty.ts)
+  make-icon.py        build/icon-source.png → build/icon.png (squircle macOS)
+  stamp-downloaded.py ustawia macOS-owy „downloaded date" na aplikacji / instalatorach
+build/
+  icon-source.png     źródłowa grafika ikony
+  icon.png            wygenerowana ikona aplikacji (squircle, 1024 px)
 ```
 
 Komunikacja renderer ↔ main wyłącznie przez **IPC** (kanały zebrane w `IPC` w
@@ -482,6 +527,9 @@ zapisuje go z debounce do `state.json`.
 | `npm run rebuild` | przebudowa natywnego `node-pty` |
 | `node scripts/fix-pty-perms.cjs` | naprawa uprawnień spawn-helper (gdy `posix_spawnp failed`) |
 | `node scripts/smoke.cjs` | smoke test procesu głównego |
+| `node scripts/alt-check.js` | self-check logiki alternate screen, na której stoi tryb vim (asercje, na końcu `alt-check OK`) |
+| `python3 scripts/make-icon.py` | regeneruje `build/icon.png` z `build/icon-source.png` (płótno 1024 px, korpus 824 px); wymaga Pillow |
+| `python3 scripts/stamp-downloaded.py <ścieżka…>` | ustawia macOS-owy „downloaded date" (`kMDItemDownloadedDate`) na aplikacji/instalatorach; tylko macOS |
 
 `npm run package` buduje domyślnie pod bieżący system. Cross-build: `electron-builder --win`
 (na macOS/Linux wymaga wine) oraz `electron-builder --linux` (na macOS wymaga Dockera, albo odpal na
@@ -498,5 +546,8 @@ Linuksie). Targety są w [electron-builder.yml](electron-builder.yml).
 - **Zmniejszenie układu** (mniej paneli) zamyka procesy usuwanych paneli.
 - Stany Autopilota (które panele jadą) są runtime — nie przeżywają restartu.
 - Auto-instalacja zdalnych CLI dla narzędzi npm-owych (Gemini/Codex) wymaga `npm`/`node` na serwerze;
-  Claude instaluje się przez `curl`.
+  **Claude Code i Kimi Code instalują się przez `curl`** (Aider wymaga `python3`/`pip`). Goose, opencode
+  i Amazon Q nie mają auto-instalatora — wrzucasz je na serwer sam.
+- Ekran programu pełnoekranowego (alternate screen) nie wchodzi do ~200 kB scrollbacku — po powrocie do
+  panelu program przerysowuje się sam i nie ma dla niego historii przewijania.
 </content>

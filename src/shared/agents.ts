@@ -3,7 +3,7 @@
 // (osobny folder na konto) i jaki ma env na klucz API. Współdzielony przez main (PTY/instalacja)
 // i renderer (UI). Antigravity/Cursor/Windsurf to IDE, nie CLI — celowo poza listą.
 
-export type AgentToolId = 'claude' | 'gemini' | 'codex' | 'aider' | 'goose' | 'opencode' | 'q'
+export type AgentToolId = 'claude' | 'gemini' | 'codex' | 'kimi' | 'aider' | 'goose' | 'opencode' | 'q'
 
 export interface AgentTool {
   id: AgentToolId
@@ -41,6 +41,17 @@ export const AGENT_TOOLS: AgentTool[] = [
     apiKeyEnv: 'OPENAI_API_KEY',
     install: { sh: 'npm install -g @openai/codex', ps: 'npm install -g @openai/codex' },
     authNote: 'ChatGPT login or OPENAI_API_KEY'
+  },
+  {
+    id: 'kimi',
+    name: 'Kimi Code',
+    cmd: 'kimi',
+    apiKeyEnv: 'MOONSHOT_API_KEY',
+    install: {
+      sh: 'curl -LsSf https://code.kimi.com/install.sh | bash',
+      ps: 'irm https://code.kimi.com/install.ps1 | iex'
+    },
+    authNote: '/login (OAuth) or MOONSHOT_API_KEY'
   },
   {
     id: 'aider',

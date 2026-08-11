@@ -90,6 +90,7 @@ interface State {
   autoApproveMin: number // dolna granica losowego odstępu między Enterami (sekundy)
   autoApproveMax: number // górna granica losowego odstępu między Enterami (sekundy)
   autoApproveIds: string[] // terminale z włączonym auto-approve (runtime, bez persistencji)
+  zoomPaneId: string | null // panel rozciągnięty na całą przestrzeń (runtime, bez persistencji)
   claudeEnabled: boolean // czy pokazać 5. tryb (Agents) w pasku trybów
   claudeProfiles: AgentProfile[] // zapisane konta agentów AI (zakładka „Agents")
 
@@ -147,6 +148,7 @@ interface State {
   resetVimBinds: () => void
   setWinPending: (v: boolean) => void
   setActiveVimMode: (m: 'insert' | 'normal') => void
+  toggleZoomPane: (paneId: string) => void
   setRam: (patch: Partial<RamSettings>) => void
   setRamStats: (s: RamStats) => void
   setRamPanelOpen: (open: boolean) => void
@@ -258,6 +260,7 @@ export const useStore = create<State>((set, get) => ({
   autoApproveMin: 5,
   autoApproveMax: 8,
   autoApproveIds: [],
+  zoomPaneId: null,
   claudeEnabled: false,
   claudeProfiles: [],
 
@@ -414,7 +417,10 @@ export const useStore = create<State>((set, get) => ({
       current: target,
       maxWorkspace: Math.max(get().maxWorkspace, target),
       activePaneId: first ? first.id : null,
-      paneHistory: first ? [first.id] : [] // MRU liczone w obrębie przestrzeni
+      paneHistory: first ? [first.id] : [], // MRU liczone w obrębie przestrzeni
+      // Zoom zdejmujemy przy zmianie przestrzeni — inaczej po powrocie panel z zoomem
+      // przykrywałby siatkę, a fokus siedziałby w panelu schowanym pod spodem.
+      zoomPaneId: null
     })
     schedulePersist(get)
   },
@@ -510,7 +516,8 @@ export const useStore = create<State>((set, get) => ({
       activePaneId: first ? first.id : null,
       paneHistory: first ? [first.id] : [],
       autoScrollIds: s.autoScrollIds.filter((id) => !deadIds.has(id)),
-      autoApproveIds: s.autoApproveIds.filter((id) => !deadIds.has(id))
+      autoApproveIds: s.autoApproveIds.filter((id) => !deadIds.has(id)),
+      zoomPaneId: s.zoomPaneId && deadIds.has(s.zoomPaneId) ? null : s.zoomPaneId
     }))
     schedulePersist(get)
   },
@@ -532,7 +539,8 @@ export const useStore = create<State>((set, get) => ({
       activePaneId: replacement.id,
       paneHistory: [replacement.id, ...s.paneHistory.filter((p) => p !== target)].slice(0, 32),
       autoScrollIds: s.autoScrollIds.filter((id) => id !== target),
-      autoApproveIds: s.autoApproveIds.filter((id) => id !== target)
+      autoApproveIds: s.autoApproveIds.filter((id) => id !== target),
+      zoomPaneId: s.zoomPaneId === target ? null : s.zoomPaneId
     }))
     schedulePersist(get)
   },
@@ -542,7 +550,9 @@ export const useStore = create<State>((set, get) => ({
       if (s.activePaneId === id) return {}
       // Aktualizacja historii MRU: najnowszy z przodu, bez duplikatów.
       const paneHistory = [id, ...s.paneHistory.filter((p) => p !== id)].slice(0, 32)
-      return { activePaneId: id, paneHistory }
+      // Przejście na inny panel zdejmuje zoom (jak w tmuxie) — bez tego fokus lądowałby
+      // w panelu ukrytym pod rozciągniętym.
+      return { activePaneId: id, paneHistory, zoomPaneId: s.zoomPaneId === id ? id : null }
     }),
 
   setLayout: (layoutId) => {
@@ -563,7 +573,9 @@ export const useStore = create<State>((set, get) => ({
     const stillActive = panes.some((p) => p.id === activePaneId)
     set({
       workspaces: { ...workspaces, [current]: { ...w, layoutId, panes } },
-      activePaneId: stillActive ? activePaneId : panes[0]?.id ?? null
+      activePaneId: stillActive ? activePaneId : panes[0]?.id ?? null,
+      // Bez tego nowy układ byłby całkowicie przykryty przez panel trzymający zoom.
+      zoomPaneId: null
     })
     schedulePersist(get)
   },
@@ -700,6 +712,8 @@ export const useStore = create<State>((set, get) => ({
   },
   setWinPending: (v) => set({ winPending: v }),
   setActiveVimMode: (m) => set({ activeVimMode: m }),
+  toggleZoomPane: (paneId) =>
+    set((s) => ({ zoomPaneId: s.zoomPaneId === paneId ? null : paneId })),
 
   setRam: (patch) => {
     set((s) => ({ ram: { ...s.ram, ...patch } }))

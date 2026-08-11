@@ -129,7 +129,8 @@ function BrowserTab({
         /* webview jeszcze nie gotowy */
       }
     }
-    const onIpc = (e: { channel: string; args: unknown[] }): void => {
+    // Typ zdarzenia ipc-message webview (Electron) — DOM zna tylko Event, stąd cast niżej.
+    const onIpc = (e: Event & { channel: string; args: unknown[] }): void => {
       if (e.channel === 'pane-activate') onActivate()
       else if (e.channel === 'open-tab' && e.args?.[0]) onOpenTab(String(e.args[0]))
       else if (e.channel === 'focus-url') onFocusAddress() // ':' → domyślny pasek adresu

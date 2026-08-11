@@ -12,3 +12,6 @@ release
 .env
 .env.*
 *.local
+
+# Lokalna konfiguracja narzędzi (nie trafia do repo)
+.claude/

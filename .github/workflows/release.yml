@@ -1,0 +1,71 @@
+# Buduje paczki na trzech systemach i podpina je do release'u.
+#
+# Uruchamia się po wypchnięciu tagu `v*` (albo ręcznie z zakładki Actions). Każdy system buduje
+# się na swoim runnerze — inaczej .exe wymagałoby wine, a .deb/.rpm dockera.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # potrzebne, by dograć pliki do release'u
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false # jeden system nie może zabrać reszty
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon; buduje też x64 (konfiguracja w electron-builder.yml)
+            args: --mac
+          - os: windows-latest
+            args: --win
+          - os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # node-pty jest natywny — na Linuksie potrzebuje nagłówków i narzędzi pakietowania.
+      - name: Zależności systemowe (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - run: npm ci
+
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: braindead-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.pacman
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Dograj pliki do release'u
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"

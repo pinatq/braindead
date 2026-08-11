@@ -77,6 +77,8 @@ export default function PaneGrid({ workspaceId, visible }: Props): JSX.Element {
   const autoScrollIds = useStore((s) => s.autoScrollIds)
   const autoApproveIds = useStore((s) => s.autoApproveIds)
   const setActivePane = useStore((s) => s.setActivePane)
+  const zoomPaneId = useStore((s) => s.zoomPaneId)
+  const toggleZoomPane = useStore((s) => s.toggleZoomPane)
 
   if (!workspace) return <div className="pane-grid" style={{ display: 'none' }} />
 
@@ -98,6 +100,7 @@ export default function PaneGrid({ workspaceId, visible }: Props): JSX.Element {
         const active = pane.id === activePaneId
         const autoScrolling = autoScrollIds.includes(pane.id)
         const autoApprove = autoApproveIds.includes(pane.id)
+        const zoomed = pane.id === zoomPaneId
         return (
           <div
             key={pane.id}
@@ -106,12 +109,26 @@ export default function PaneGrid({ workspaceId, visible }: Props): JSX.Element {
               'pane' +
               (active ? ' pane--active' : '') +
               (autoScrolling ? ' pane--autoscroll' : '') +
-              (autoApprove ? ' pane--autoapprove' : '')
+              (autoApprove ? ' pane--autoapprove' : '') +
+              (zoomed ? ' pane--zoom' : '')
             }
-            style={{ gridArea: area }}
+            // Zoom = rozciągnięcie na wszystkie tory siatki. (Nie position:absolute — element
+            // gridu z grid-area ma za blok odniesienia własną komórkę, więc nic by to nie dało.)
+            style={{ gridArea: zoomed ? '1 / 1 / -1 / -1' : area }}
             onMouseDown={() => setActivePane(pane.id)}
           >
             <PaneTitle paneId={pane.id} title={pane.title} />
+            {/* Fullscreen panelu w granicach aplikacji (zoom jak w tmuxie) — nie rusza okna OS. */}
+            <button
+              className={'pane-zoom' + (zoomed ? ' pane-zoom--on' : '')}
+              data-tip={zoomed ? 'Restore pane size' : 'Fullscreen pane (inside the app)'}
+              // Bez tego klik zabiera fokus terminalowi (przycisk dostaje fokus DOM), a pisanie
+              // przestaje działać do czasu przełączenia panelu.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => toggleZoomPane(pane.id)}
+            >
+              {zoomed ? '⤡' : '⤢'}
+            </button>
             {autoApprove && <span className="pane-autoapprove-badge">AUTO ↵</span>}
             {pane.mode === 'terminal' && <TerminalPane paneId={pane.id} />}
             {pane.mode === 'browser' && (

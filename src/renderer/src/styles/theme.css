@@ -397,11 +397,54 @@ button:disabled {
 }
 
 .pane-grid {
+  position: relative; /* kotwica dla panelu w trybie zoom */
   display: grid;
   gap: 6px;
   padding: 6px;
   width: 100%;
   height: 100%;
+}
+
+/* Panel „fullscreen w granicach aplikacji" (zoom jak w tmuxie): rozciągnięty na wszystkie tory
+   siatki (grid-area ustawia PaneGrid inline) i wyniesiony nad pozostałe. Reszta paneli zostaje
+   zamontowana pod spodem — terminale i przeglądarki żyją dalej. */
+.pane--zoom {
+  z-index: 20;
+}
+
+/* Przycisk zoomu — transparentny, nad treścią panelu (prawy górny róg), widoczny dopiero po
+   najechaniu na panel. Selektor musi być bardziej szczegółowy niż `[data-tip]` (dymki ustawiają
+   position: relative i jako późniejsza reguła wygrałyby remis specyficzności). */
+.pane > .pane-zoom {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  z-index: 9; /* nad paskiem eksploratora (8) i chipem tytułu (6) */
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none; /* niewidoczny nie łapie kliknięć */
+  transition: opacity 0.12s ease;
+}
+.pane:hover > .pane-zoom {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+.pane > .pane-zoom:hover {
+  opacity: 1;
+}
+.pane > .pane-zoom--on {
+  color: var(--accent);
+}
+.pane-zoom[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .pane {
@@ -452,7 +495,7 @@ button:disabled {
 }
 .pane-autoapprove-badge {
   position: absolute;
-  right: 8px;
+  right: 38px; /* miejsce na przycisk zoomu w rogu */
   top: 6px;
   z-index: 6;
   padding: 1px 7px;
@@ -806,13 +849,18 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Pusty tytuł (samo ✎) to tylko zachęta do kliknięcia — pokazujemy po najechaniu na panel. */
 .pane-title--empty {
-  opacity: 0.18;
+  opacity: 0;
   border-color: transparent;
   background: transparent;
+  transition: opacity 0.12s ease;
+}
+.pane:hover .pane-title--empty {
+  opacity: 0.4;
 }
 .pane-title--empty:hover {
-  opacity: 0.7;
+  opacity: 0.9;
 }
 .pane-title--edit {
   cursor: text;
@@ -832,7 +880,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 6px;
+  padding: 5px 36px 5px 6px; /* z prawej miejsce na przycisk zoomu panelu */
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
 }
@@ -882,7 +930,7 @@ button:disabled {
 .browser-tabs {
   display: flex;
   gap: 2px;
-  padding: 4px 6px 0;
+  padding: 4px 36px 0 6px; /* z prawej miejsce na przycisk zoomu panelu */
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
@@ -1675,7 +1723,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 5px 36px 5px 8px; /* z prawej miejsce na przycisk zoomu panelu */
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
 }
@@ -1900,7 +1948,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 8px;
+  padding: 8px 36px 8px 8px; /* z prawej miejsce na przycisk zoomu panelu */
   border-bottom: 1px solid var(--border);
 }
 .explorer-bar button {

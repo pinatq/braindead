@@ -121,6 +121,12 @@ export interface PtyDataEvent {
   data: string
 }
 
+// Wejście/wyjście programu pełnoekranowego (alternate screen) w danej sesji PTY.
+export interface PtyAltEvent {
+  id: string
+  alt: boolean
+}
+
 export interface PtyExitEvent {
   id: string
   exitCode: number
@@ -134,6 +140,7 @@ export const IPC = {
   ptyKill: 'pty:kill',
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
+  ptyAlt: 'pty:alt',
   storeLoad: 'store:load',
   storeSave: 'store:save',
   dialogSaveNotes: 'dialog:saveNotes',

@@ -7,6 +7,7 @@ import {
   type PtyEnsureOpts,
   type PtyDataEvent,
   type PtyExitEvent,
+  type PtyAltEvent,
   type LoadedFile,
   type NoteFile,
   type RamStats,
@@ -24,8 +25,10 @@ const webviewPreloadUrl = pathToFileURL(path.join(__dirname, 'webview.js')).toSt
 // MaxListenersExceededWarning przy wielu terminalach (do 16 paneli).
 const dataCbs = new Set<(e: PtyDataEvent) => void>()
 const exitCbs = new Set<(e: PtyExitEvent) => void>()
+const altCbs = new Set<(e: PtyAltEvent) => void>()
 ipcRenderer.on(IPC.ptyData, (_e: IpcRendererEvent, p: PtyDataEvent) => dataCbs.forEach((cb) => cb(p)))
 ipcRenderer.on(IPC.ptyExit, (_e: IpcRendererEvent, p: PtyExitEvent) => exitCbs.forEach((cb) => cb(p)))
+ipcRenderer.on(IPC.ptyAlt, (_e: IpcRendererEvent, p: PtyAltEvent) => altCbs.forEach((cb) => cb(p)))
 
 // Statystyki RAM (push z mainu co kilka sekund) — ten sam wzorzec fan-out.
 const ramCbs = new Set<(s: RamStats) => void>()
@@ -33,7 +36,7 @@ ipcRenderer.on(IPC.ramStats, (_e: IpcRendererEvent, s: RamStats) => ramCbs.forEa
 
 const api = {
   pty: {
-    ensure: (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean }> =>
+    ensure: (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean; alt: boolean }> =>
       ipcRenderer.invoke(IPC.ptyEnsure, id, opts),
     input: (id: string, data: string): void => ipcRenderer.send(IPC.ptyInput, id, data),
     resize: (id: string, cols: number, rows: number): void =>
@@ -46,6 +49,11 @@ const api = {
     onExit: (cb: (e: PtyExitEvent) => void): (() => void) => {
       exitCbs.add(cb)
       return () => exitCbs.delete(cb)
+    },
+    // Wejście/wyjście programu pełnoekranowego (nvim, htop) — vim mode ma wtedy odpuścić klawisze.
+    onAlt: (cb: (e: PtyAltEvent) => void): (() => void) => {
+      altCbs.add(cb)
+      return () => altCbs.delete(cb)
     }
   },
   store: {
