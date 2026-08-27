@@ -135,7 +135,7 @@ pub struct ClaudeCliStatus {
     pub path: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_status(cmd: String) -> ClaudeCliStatus {
     if cmd.is_empty() {
         return ClaudeCliStatus { installed: false, path: None };
@@ -145,7 +145,7 @@ pub fn agent_status(cmd: String) -> ClaudeCliStatus {
     ClaudeCliStatus { installed: r.code == 0 && path.is_some(), path }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_install(tool_id: String) -> serde_json::Value {
     let tool = agent_tool(&tool_id);
     let cmd = tool.and_then(|t| t.install_sh);
@@ -169,10 +169,10 @@ fn last_line(s: &str) -> &str {
 /// 2) scp the local isolated config (token/login) over — no re-login. WARNING: sends the
 /// token to the remote machine; the UI confirms before calling (agents.ts).
 /// Auth for scp/ssh via key/agent (same as the explorer).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agent_ssh_sync(app: AppHandle, command: String, tool_id: String, profile_id: String) -> serde_json::Value {
     let say = |stage: String| {
-        let _ = app.emit("agent:sshProgress", json!({ "profileId": profile_id, "stage": stage }));
+        let _ = app.emit_to("ui", "agent:sshProgress", json!({ "profileId": profile_id, "stage": stage }));
     };
     let t = match parse_command(&command) {
         Ok(t) => t,

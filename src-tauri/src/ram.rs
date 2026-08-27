@@ -1,10 +1,16 @@
 // RAM monitor — port of startRamMonitor in Electron's src/main/index.ts.
 // Every ~3s emits `ram:stats` { appMb, freeMb, totalMb }: appMb = summed memory of this
 // process tree (best-effort equivalent of app.getAppMetrics()), free/total from the OS.
+//
+// Dwie optymalizacje względem pierwszej wersji:
+//  * odświeżamy TYLKO pamięć i rodzica procesów (ProcessRefreshKind), a nie pełny zestaw
+//    danych (cmdline, env, dyski, użytkownicy) o każdym procesie w systemie — to był
+//    najdroższy cykliczny koszt w całej aplikacji.
+//  * emit_to("ui", …) zamiast rozgłoszenia do wszystkich webview (w tym stron w panelach).
 use std::collections::HashMap;
 
 use serde::Serialize;
-use sysinfo::{Pid, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter};
 
 const TICK_MS: u64 = 3000;
@@ -23,7 +29,12 @@ pub fn start(app: AppHandle) {
         let own = Pid::from_u32(std::process::id());
         loop {
             sys.refresh_memory();
-            sys.refresh_processes(ProcessesToUpdate::All, true);
+            // Potrzebujemy wyłącznie memory + parent, żeby zsumować własne drzewo procesów.
+            sys.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                ProcessRefreshKind::nothing().with_memory(),
+            );
             // Sum our process tree: BFS over parent links (app + child webviews/agents).
             let mut children_of: HashMap<Pid, Vec<Pid>> = HashMap::new();
             for (pid, proc_) in sys.processes() {
@@ -46,7 +57,7 @@ pub fn start(app: AppHandle) {
                 free_mb: sys.free_memory() / 1_048_576,
                 total_mb: sys.total_memory() / 1_048_576,
             };
-            let _ = app.emit("ram:stats", stats);
+            let _ = app.emit_to("ui", "ram:stats", stats);
             std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
         }
     });

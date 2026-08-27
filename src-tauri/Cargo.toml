@@ -43,3 +43,12 @@ mime_guess = "2"
 # where the GUI env has no $SHELL (pty.rs::login_shell).
 libc = "0.2"
 
+
+# Profil wydania nastawiony na mały i szybki plik wykonywalny.
+# Bez panic="abort" celowo: rozwijanie stosu sprawia, że panika w wątku PTY/SSH ubija
+# ten jeden wątek, a nie cały proces (kod wyżej przejmuje zatrute muteksy i leci dalej).
+[profile.release]
+opt-level = 3        # PTY i base64 siedzą w gorącej pętli — rozmiar odpuszczamy tutaj, nie tam
+lto = "fat"          # kasuje martwy kod przez granice crate'ów (openssl, ssh2, wry)
+codegen-units = 1    # lepsza optymalizacja kosztem czasu kompilacji
+strip = true         # symbole debugowe poza binarkę

@@ -78,6 +78,38 @@ const TEMPLATE: &str = r#"
     'win.cycle', 'win.cyclePrev', 'win.close', 'win.splitDown', 'win.splitRight', 'win.only'
   ];
 
+  // ================= Odtwarzanie mediów =================
+  // Port zdarzeń media-started-playing / media-paused z Electronowego <webview>: karta,
+  // w której leci film, nie może zostać uśpiona przez eco mode. Nasłuch w fazie capture
+  // na document łapie też <video> dodane do DOM później (YouTube, reels).
+  document.addEventListener('play', function () { go('media', { on: 1 }); }, true);
+  document.addEventListener('pause', function () { go('media', { on: 0 }); }, true);
+  document.addEventListener('ended', function () { go('media', { on: 0 }); }, true);
+
+  // ================= Nawigacja w SPA =================
+  // history.pushState nie odpala on_navigation po stronie Rusta, więc pasek adresu
+  // zostawał na starym URL-u (YouTube, X, GitHub). Podpinamy się pod API historii.
+  // ponytail: raportujemy sam adres — pozycji w historii WKWebView i tak nie zdradza,
+  // stos wstecz/dalej dalej liczy BrowserPane.
+  (function () {
+    var last = location.href;
+    var tell = function () {
+      if (location.href === last) return;
+      last = location.href;
+      go('spa-nav', { url: last });
+    };
+    ['pushState', 'replaceState'].forEach(function (m) {
+      var orig = history[m];
+      history[m] = function () {
+        var r = orig.apply(this, arguments);
+        setTimeout(tell, 0);
+        return r;
+      };
+    });
+    window.addEventListener('popstate', function () { setTimeout(tell, 0); }, true);
+    window.addEventListener('hashchange', function () { setTimeout(tell, 0); }, true);
+  })();
+
   // Klik / focus w treści => aktywuj panel (niebieska ramka) — jak mousedown w preloadzie.
   window.addEventListener('mousedown', function () { go('activate', {}); }, true);
   window.addEventListener('focus', function () { go('activate', {}); }, true);

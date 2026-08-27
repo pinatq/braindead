@@ -7,14 +7,22 @@
 // hundreds-to-thousands of IPC round-trips/sec. Output bytes are sent base64 so arbitrary
 // (non-UTF8 / mid-sequence) terminal bytes survive the JSON event boundary intact.
 //
-// Ported from pty.ts: per-session scrollback ring buffer (replayed on re-attach) and
-// agent mode (isolated config dir per profile + auto-run of the tool command, optionally
-// wrapped in ssh for remote agents).
+// Ported from pty.ts: per-session scrollback ring buffer (replayed on re-attach), alternate
+// screen tracking (pty:alt), real exit codes and agent mode (isolated config dir per profile
+// + auto-run of the tool command, optionally wrapped in ssh for remote agents).
+//
+// Dwie rzeczy różnią się od pierwszej wersji portu:
+//  * emit_to("ui", …) zamiast app.emit(…) — zdarzenie idzie WYŁĄCZNIE do webview interfejsu.
+//    app.emit rozgłasza do wszystkich webview, czyli także do stron otwartych w panelach
+//    przeglądarki: strona dostawała wyjście wszystkich terminali i kosztowało to serializację
+//    razy liczba paneli.
+//  * wątek flushujący śpi na Condvarze zamiast budzić się co 8 ms w kółko. Przy 16 panelach
+//    to było 2000 przebudzeń na sekundę na pusto; teraz bezczynny terminal kosztuje zero.
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use base64::Engine;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -24,6 +32,44 @@ use tauri::{AppHandle, Emitter};
 use crate::agents::{agent_tool, local_agent_dir};
 
 const FLUSH_MS: u64 = 8;
+/// Etykieta webview interfejsu — jedyny odbiorca zdarzeń pty:*.
+const UI: &str = "ui";
+/// Ile ostatnich bajtów trzymamy, żeby sekwencja alt-screen rozcięta między chunkami
+/// dała się złożyć (najdłuższa to 8 bajtów: ESC [ ? 1 0 4 9 h).
+const SEQ_TAIL: usize = 16;
+
+/// Zatrucie mutexa nie może zabić terminala — przejmujemy dane i lecimy dalej.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Czy strumień właśnie wszedł (true) albo wyszedł (false) z ekranu alternatywnego.
+/// Port pty.ts: DECSET 1049 / 1047 / 47, liczy się OSTATNIA sekwencja w porcji danych.
+fn alt_from_chunk(scan: &[u8]) -> Option<bool> {
+    const SEQS: [(&[u8], bool); 6] = [
+        (b"\x1b[?1049h", true), (b"\x1b[?1049l", false),
+        (b"\x1b[?1047h", true), (b"\x1b[?1047l", false),
+        (b"\x1b[?47h", true),   (b"\x1b[?47l", false),
+    ];
+    SEQS.iter()
+        .filter_map(|(seq, on)| rfind(scan, seq).map(|at| (at, *on)))
+        .max_by_key(|(at, _)| *at)
+        .map(|(_, on)| on)
+}
+
+fn rfind(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    (0..=hay.len() - needle.len()).rev().find(|&i| &hay[i..i + needle.len()] == needle)
+}
+
+/// Bufor scalający wyjście PTY + sygnał dla wątku flushującego.
+#[derive(Default)]
+struct Outbox {
+    data: Vec<u8>,
+    alive: bool,
+}
 // Scrollback kept in memory per session (pty.ts MAX_BUFFER), replayed when ensure hits a
 // live session so a background terminal restores after the view remounts.
 const MAX_SCROLLBACK: usize = 128 * 1024;
@@ -72,9 +118,22 @@ pub struct AgentSsh {
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
-    child: Box<dyn Child + Send + Sync>,
+    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
     alive: Arc<AtomicBool>,
+    /// Czy w sesji chodzi program pełnoekranowy (nvim/htop). Renderer bierze to
+    /// z odpowiedzi pty_spawn i ze zdarzeń pty:alt — bufor xterma bywa niewiarygodny.
+    alt: Arc<AtomicBool>,
     scrollback: Arc<Mutex<Vec<u8>>>,
+    /// Ostatni znany rozmiar — potrzebny, by po remoncie widoku szturchnąć TUI do przerysowania.
+    cols: u16,
+    rows: u16,
+}
+
+/// Odpowiedź pty_spawn — kształt jak `{ existed, alt }` z Electronowego ensure().
+#[derive(serde::Serialize)]
+pub struct SpawnResult {
+    pub existed: bool,
+    pub alt: bool,
 }
 
 #[derive(Default)]
@@ -83,17 +142,33 @@ pub struct PtyManager {
 }
 
 impl PtyManager {
-    /// Creates the session if missing; returns Ok(true) when it already existed (pty.ts ensure).
-    /// On re-attach the buffered scrollback is replayed as a normal `pty:data` base64 event.
-    pub fn spawn(&self, app: AppHandle, id: String, cols: u16, rows: u16, cwd: Option<String>, agent: Option<AgentOpts>) -> Result<bool, String> {
+    /// Tworzy sesję, jeśli jej nie ma. Gdy już istnieje: odtwarza scrollback jako zwykłe
+    /// zdarzenie pty:data i zwraca `existed: true` wraz z bieżącym stanem alt-screena.
+    pub fn spawn(&self, app: AppHandle, id: String, cols: u16, rows: u16, cwd: Option<String>, agent: Option<AgentOpts>) -> Result<SpawnResult, String> {
         {
-            let map = self.sessions.lock().unwrap();
-            if let Some(s) = map.get(&id) {
-                let buf = s.scrollback.lock().unwrap().clone();
-                if !buf.is_empty() {
-                    let _ = app.emit("pty:data", (id.clone(), base64::engine::general_purpose::STANDARD.encode(buf)));
+            let mut map = lock(&self.sessions);
+            if let Some(s) = map.get_mut(&id) {
+                let alt = s.alt.load(Ordering::Relaxed);
+                // Port pty.ts:77 — remont widoku nad działającym TUI. Program pełnoekranowy
+                // nie przerysuje się sam, więc zwężamy o wiersz i wracamy (SIGWINCH nie jest
+                // kolejkowany, więc powrót musi iść osobnym tickiem). Warunek na zgodność
+                // rozmiaru odsiewa panele, których renderer jeszcze nie zmierzył i przysyła 80x24.
+                if alt && cols == s.cols && rows == s.rows && rows > 1 {
+                    let _ = s.master.resize(PtySize { rows: rows - 1, cols, pixel_width: 0, pixel_height: 0 });
+                    let sessions = self.sessions.clone();
+                    let (nid, ncols, nrows) = (id.clone(), cols, rows);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(50));
+                        if let Some(s) = lock(&sessions).get(&nid) {
+                            let _ = s.master.resize(PtySize { rows: nrows, cols: ncols, pixel_width: 0, pixel_height: 0 });
+                        }
+                    });
                 }
-                return Ok(true);
+                let buf = lock(&s.scrollback).clone();
+                if !buf.is_empty() {
+                    let _ = app.emit_to(UI, "pty:data", (id.clone(), b64(buf)));
+                }
+                return Ok(SpawnResult { existed: true, alt });
             }
         }
 
@@ -104,6 +179,7 @@ impl PtyManager {
         let shell = login_shell();
         let mut cmd = build_command(&app, &shell, cwd.as_deref(), agent)?;
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor"); // parytet z Electronem: dziedziczył go z env aplikacji
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         drop(pair.slave); // parent doesn't need the slave fd
 
@@ -111,103 +187,132 @@ impl PtyManager {
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
         let alive = Arc::new(AtomicBool::new(true));
-        let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let alt = Arc::new(AtomicBool::new(false));
         let scrollback = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let child = Arc::new(Mutex::new(child));
+        let exit_code = Arc::new(AtomicU32::new(0));
+        // (bufor wyjścia, budzik dla wątku flushującego)
+        let outbox = Arc::new((Mutex::new(Outbox { data: Vec::new(), alive: true }), Condvar::new()));
 
-        // Reader thread: blocks on PTY, appends to the coalescing buffer + scrollback ring.
-        // Exits on EOF (kill/exit) and drops the session — like pty.ts proc.onExit.
-        let rbuf = buf.clone();
-        let rscroll = scrollback.clone();
-        let ralive = alive.clone();
-        let rsessions = self.sessions.clone();
-        let rid = id.clone();
-        std::thread::spawn(move || {
-            let mut chunk = [0u8; 8192];
-            loop {
-                match reader.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        rbuf.lock().unwrap().extend_from_slice(&chunk[..n]);
-                        let mut sb = rscroll.lock().unwrap();
-                        sb.extend_from_slice(&chunk[..n]);
+        // ── Wątek czytający: blokuje się na PTY, dopisuje do bufora i scrollbacku,
+        //    po drodze śledzi wejście/wyjście z ekranu alternatywnego.
+        {
+            let (outbox, scrollback, alive, alt) = (outbox.clone(), scrollback.clone(), alive.clone(), alt.clone());
+            let (sessions, child, exit_code) = (self.sessions.clone(), child.clone(), exit_code.clone());
+            let (app, id) = (app.clone(), id.clone());
+            std::thread::spawn(move || {
+                let mut chunk = [0u8; 8192];
+                let mut tail: Vec<u8> = Vec::with_capacity(SEQ_TAIL + 8192);
+                loop {
+                    let n = match reader.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    };
+                    let data = &chunk[..n];
+
+                    // Alt-screen: skanujemy ogon + nową porcję, żeby nie zgubić sekwencji
+                    // rozciętej między odczytami.
+                    tail.extend_from_slice(data);
+                    if let Some(on) = alt_from_chunk(&tail) {
+                        if alt.swap(on, Ordering::Relaxed) != on {
+                            let _ = app.emit_to(UI, "pty:alt", serde_json::json!({ "id": id, "alt": on }));
+                        }
+                    }
+                    if tail.len() > SEQ_TAIL {
+                        tail.drain(..tail.len() - SEQ_TAIL);
+                    }
+
+                    {
+                        let mut sb = lock(&scrollback);
+                        sb.extend_from_slice(data);
                         let excess = sb.len().saturating_sub(MAX_SCROLLBACK);
                         if excess > 0 {
                             sb.drain(..excess);
                         }
                     }
+                    let (buf, cv) = &*outbox;
+                    lock(buf).data.extend_from_slice(data);
+                    cv.notify_one();
                 }
-            }
-            ralive.store(false, Ordering::Relaxed);
-            rsessions.lock().unwrap().remove(&rid);
-        });
+                // EOF = proces skończył. Zbieramy prawdziwy kod wyjścia (Electron: proc.onExit).
+                if let Ok(status) = lock(&child).wait() {
+                    exit_code.store(status.exit_code(), Ordering::Relaxed);
+                }
+                alive.store(false, Ordering::Relaxed);
+                // Sesja zamknięta w alt-screenie zostawiłaby renderer z altRef=true na zawsze.
+                if alt.swap(false, Ordering::Relaxed) {
+                    let _ = app.emit_to(UI, "pty:alt", serde_json::json!({ "id": id, "alt": false }));
+                }
+                lock(&sessions).remove(&id);
+                let (buf, cv) = &*outbox;
+                lock(buf).alive = false;
+                cv.notify_one();
+            });
+        }
 
-        // Flush thread: drains+emits every FLUSH_MS. Prints throughput once/sec to prove batching.
-        let fbuf = buf.clone();
-        let falive = alive.clone();
-        let fid = id.clone();
-        let b64 = base64::engine::general_purpose::STANDARD;
-        std::thread::spawn(move || {
-            let (mut emits, mut bytes, mut tick) = (0u64, 0u64, Instant::now());
-            loop {
-                std::thread::sleep(Duration::from_millis(FLUSH_MS));
-                let out = {
-                    let mut g = fbuf.lock().unwrap();
-                    if g.is_empty() {
-                        Vec::new()
-                    } else {
-                        std::mem::take(&mut *g)
-                    }
-                };
-                if !out.is_empty() {
-                    emits += 1;
-                    bytes += out.len() as u64;
-                    let _ = app.emit("pty:data", (fid.clone(), b64.encode(out)));
+        // ── Wątek flushujący: czeka na Condvarze (bezczynny terminal = zero przebudzeń),
+        //    po emisji śpi FLUSH_MS jako okno scalania — dzięki temu pierwszy bajt leci
+        //    natychmiast (echo klawisza), a zalew wyjścia i tak jest ograniczony do ~125 emisji/s.
+        {
+            let (outbox, app, fid, exit_code) = (outbox.clone(), app.clone(), id.clone(), exit_code.clone());
+            std::thread::spawn(move || {
+                let (buf, cv) = &*outbox;
+                loop {
+                    let out = {
+                        let mut g = lock(buf);
+                        while g.data.is_empty() && g.alive {
+                            g = cv.wait(g).unwrap_or_else(PoisonError::into_inner);
+                        }
+                        if g.data.is_empty() && !g.alive {
+                            break;
+                        }
+                        std::mem::take(&mut g.data)
+                    };
+                    let _ = app.emit_to(UI, "pty:data", (fid.clone(), b64(out)));
+                    std::thread::sleep(Duration::from_millis(FLUSH_MS));
                 }
-                if tick.elapsed() >= Duration::from_secs(1) {
-                    if bytes > 0 {
-                        println!("[pty {fid}] emits/s={emits} bytes/s={bytes} (ratio 1 emit : {} bytes)", bytes / emits.max(1));
-                    }
-                    emits = 0;
-                    bytes = 0;
-                    tick = Instant::now();
-                }
-                if !falive.load(Ordering::Relaxed) && fbuf.lock().unwrap().is_empty() {
-                    break;
-                }
-            }
-            let _ = app.emit("pty:exit", fid.clone());
-        });
+                let _ = app.emit_to(UI, "pty:exit", serde_json::json!({
+                    "id": fid, "exitCode": exit_code.load(Ordering::Relaxed)
+                }));
+            });
+        }
 
-        self.sessions.lock().unwrap().insert(id, Session { master: pair.master, writer, child, alive, scrollback });
-        Ok(false)
+        lock(&self.sessions).insert(id, Session { master: pair.master, writer, child, alive, alt, scrollback, cols, rows });
+        Ok(SpawnResult { existed: false, alt: false })
     }
 
     pub fn write(&self, id: &str, data: &str) {
-        if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
+        if let Some(s) = lock(&self.sessions).get_mut(id) {
             let _ = s.writer.write_all(data.as_bytes());
             let _ = s.writer.flush();
         }
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) {
-        if let Some(s) = self.sessions.lock().unwrap().get(id) {
+        if let Some(s) = lock(&self.sessions).get_mut(id) {
             let _ = s.master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+            s.cols = cols;
+            s.rows = rows;
         }
     }
 
     pub fn kill(&self, id: &str) {
-        if let Some(mut s) = self.sessions.lock().unwrap().remove(id) {
+        if let Some(s) = lock(&self.sessions).remove(id) {
             s.alive.store(false, Ordering::Relaxed);
-            let _ = s.child.kill(); // dropping master/writer also closes the pty -> SIGHUP
+            let _ = lock(&s.child).kill(); // drop mastera/writera i tak zamyka pty -> SIGHUP
         }
     }
 
     pub fn kill_all(&self) {
-        let ids: Vec<String> = self.sessions.lock().unwrap().keys().cloned().collect();
+        let ids: Vec<String> = lock(&self.sessions).keys().cloned().collect();
         for id in ids {
             self.kill(&id);
         }
     }
+}
+
+fn b64(bytes: Vec<u8>) -> String {
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
 // Builds the process to spawn: plain shell, or an agent session (pty.ts ensure's agent branch).

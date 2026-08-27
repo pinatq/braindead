@@ -6,26 +6,47 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use base64::Engine;
 use serde::Serialize;
 use serde_json::{json, Value};
-use ssh2::Session;
+use ssh2::{Session, Sftp};
 use tauri::State;
 
 use crate::files::{sort_entries, DirEntry, DirListing, LoadedFile};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15); // readyTimeout in ssh.ts
 
+// Jedna sesja = jeden kanał SFTP otwarty RAZ przy połączeniu (Electron trzymał tak samo).
+// Wcześniej każda komenda robiła sess.sftp(), czyli osobny podsystem SFTP na każde `ls`.
 struct Conn {
+    #[allow(dead_code)] // trzyma sesję przy życiu: Sftp działa dopóki żyje jej Session
     sess: Session,
+    sftp: Sftp,
 }
 
+// Mutex NA POŁĄCZENIE, nie globalny. libssh2 nie pozwala na równoległe wywołania w obrębie
+// jednej sesji, ale różne serwery mogą lecieć równolegle. Mapa jest blokowana tylko na czas
+// sklonowania Arc — nigdy na czas IO sieciowego.
 #[derive(Default)]
 pub struct SshManager {
-    conns: Mutex<HashMap<String, Conn>>,
+    conns: Mutex<HashMap<String, Arc<Mutex<Conn>>>>,
+}
+
+// Zatrucie mutexa (panika w innym wątku) nie może zabić całego SSH — przejmujemy dane.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl SshManager {
+    fn conn(&self, id: &str) -> Result<Arc<Mutex<Conn>>, String> {
+        lock(&self.conns)
+            .get(id)
+            .cloned()
+            .ok_or_else(|| "SSH not connected (reconnect)".to_string())
+    }
 }
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -202,10 +223,6 @@ fn try_agent(sess: &Session, username: &str) -> bool {
     false
 }
 
-fn get_conn<'m>(map: &'m HashMap<String, Conn>, id: &str) -> Result<&'m Conn, String> {
-    map.get(id).ok_or_else(|| "SSH not connected (reconnect)".to_string())
-}
-
 // ssh.ts realpath(): "" / "~" -> ".", "~/x" -> "x" (relative to the remote home).
 fn remote_target(p: &str) -> &str {
     if p.is_empty() || p == "~" {
@@ -226,7 +243,7 @@ fn remote_parent(abs: &str) -> Option<String> {
 
 // ---- Commands ----
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_connect(mgr: State<SshManager>, cfg: Value) -> SshResult {
     let command = cfg.get("command").and_then(Value::as_str).unwrap_or("");
     let password = cfg.get("password").and_then(Value::as_str);
@@ -248,26 +265,26 @@ pub fn ssh_connect(mgr: State<SshManager>, cfg: Value) -> SshResult {
     let home = sftp.realpath(Path::new(".")).ok().and_then(|p| p.to_str().map(str::to_owned));
     let id = format!("ssh{}", SEQ.fetch_add(1, Ordering::Relaxed) + 1);
     let label = format!("{}@{}", target.username, target.host);
-    mgr.conns.lock().unwrap().insert(id.clone(), Conn { sess });
+    lock(&mgr.conns).insert(id.clone(), Arc::new(Mutex::new(Conn { sess, sftp })));
     SshResult { ok: true, id: Some(id), home, label: Some(label), error: None }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_disconnect(mgr: State<SshManager>, id: String) {
-    mgr.conns.lock().unwrap().remove(&id); // dropping the session closes the channel
+    lock(&mgr.conns).remove(&id); // drop sesji zamyka kanał
 }
 
 impl SshManager {
     pub fn disconnect_all(&self) {
-        self.conns.lock().unwrap().clear();
+        lock(&self.conns).clear();
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_read_dir(mgr: State<SshManager>, id: String, path: String) -> Result<DirListing, String> {
-    let map = mgr.conns.lock().unwrap();
-    let c = get_conn(&map, &id)?;
-    let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
+    let c = mgr.conn(&id)?;
+    let c = lock(&c);
+    let sftp = &c.sftp;
     let abs = sftp
         .realpath(Path::new(remote_target(&path)))
         .map_err(|e| e.to_string())?;
@@ -288,12 +305,11 @@ pub fn ssh_read_dir(mgr: State<SshManager>, id: String, path: String) -> Result<
     Ok(DirListing { parent: remote_parent(&abs), path: abs, entries })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_read_file(mgr: State<SshManager>, id: String, path: String) -> Result<LoadedFile, String> {
-    let map = mgr.conns.lock().unwrap();
-    let c = get_conn(&map, &id)?;
-    let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
-    let mut f = sftp.open(Path::new(&path)).map_err(|e| e.to_string())?;
+    let c = mgr.conn(&id)?;
+    let c = lock(&c);
+    let mut f = c.sftp.open(Path::new(&path)).map_err(|e| e.to_string())?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
     let name = Path::new(&path)
@@ -308,13 +324,12 @@ pub fn ssh_read_file(mgr: State<SshManager>, id: String, path: String) -> Result
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_write_file(mgr: State<SshManager>, id: String, path: String, content: String) -> Value {
     let res = (|| -> Result<(), String> {
-        let map = mgr.conns.lock().unwrap();
-        let c = get_conn(&map, &id)?;
-        let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
-        let mut f = sftp.create(Path::new(&path)).map_err(|e| e.to_string())?;
+        let c = mgr.conn(&id)?;
+        let c = lock(&c);
+        let mut f = c.sftp.create(Path::new(&path)).map_err(|e| e.to_string())?;
         f.write_all(content.as_bytes()).map_err(|e| e.to_string())
     })();
     match res {
@@ -323,14 +338,13 @@ pub fn ssh_write_file(mgr: State<SshManager>, id: String, path: String, content:
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_mkdir(mgr: State<SshManager>, id: String, dir: String, name: String) -> Value {
     let target = join_remote(&dir, &name);
     let res = (|| -> Result<(), String> {
-        let map = mgr.conns.lock().unwrap();
-        let c = get_conn(&map, &id)?;
-        let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
-        sftp.mkdir(Path::new(&target), 0o755).map_err(|e| e.to_string())
+        let c = mgr.conn(&id)?;
+        let c = lock(&c);
+        c.sftp.mkdir(Path::new(&target), 0o755).map_err(|e| e.to_string())
     })();
     match res {
         Ok(()) => json!({ "ok": true, "path": target }),
@@ -338,15 +352,14 @@ pub fn ssh_mkdir(mgr: State<SshManager>, id: String, dir: String, name: String) 
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_create(mgr: State<SshManager>, id: String, dir: String, name: String) -> Value {
     let target = join_remote(&dir, &name);
     let res = (|| -> Result<(), String> {
-        let map = mgr.conns.lock().unwrap();
-        let c = get_conn(&map, &id)?;
-        let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
+        let c = mgr.conn(&id)?;
+        let c = lock(&c);
         // EXCLUSIVE = O_CREAT|O_EXCL = Node's 'wx': fail instead of overwriting.
-        let f = sftp.open_mode(
+        let f = c.sftp.open_mode(
             Path::new(&target),
             ssh2::OpenFlags::EXCLUSIVE | ssh2::OpenFlags::WRITE,
             0o644,
@@ -361,17 +374,16 @@ pub fn ssh_create(mgr: State<SshManager>, id: String, dir: String, name: String)
 }
 
 // Removes a remote file (unlink) or an EMPTY dir (rmdir) — like ssh.ts sshDelete.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_delete(mgr: State<SshManager>, id: String, path: String) -> Value {
     let res = (|| -> Result<(), String> {
-        let map = mgr.conns.lock().unwrap();
-        let c = get_conn(&map, &id)?;
-        let sftp = c.sess.sftp().map_err(|e| e.to_string())?;
-        let stat = sftp.stat(Path::new(&path)).map_err(|e| e.to_string())?;
+        let c = mgr.conn(&id)?;
+        let c = lock(&c);
+        let stat = c.sftp.stat(Path::new(&path)).map_err(|e| e.to_string())?;
         if stat.is_dir() {
-            sftp.rmdir(Path::new(&path)).map_err(|e| e.to_string())
+            c.sftp.rmdir(Path::new(&path)).map_err(|e| e.to_string())
         } else {
-            sftp.unlink(Path::new(&path)).map_err(|e| e.to_string())
+            c.sftp.unlink(Path::new(&path)).map_err(|e| e.to_string())
         }
     })();
     match res {

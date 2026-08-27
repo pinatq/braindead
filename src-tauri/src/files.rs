@@ -1,5 +1,7 @@
 // Local files + native dialogs — port of Electron's src/main/files.ts and dialog.ts (saveNotes).
-// Dialogs go through rfd (blocking; Tauri runs sync commands off the main thread).
+// Dialogs go through rfd. Every command here is #[tauri::command(async)] — bez tego Tauri v2
+// wykonuje komendy synchroniczne na wątku GŁÓWNYM i każdy dialog/odczyt zamraża całe okno.
+// rfd sam przerzuca natywny dialog z powrotem na main thread (run_on_main), więc to bezpieczne.
 // Shapes mirror src/shared/types.ts exactly: LoadedFile / DirListing / NoteFile.
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -38,6 +40,7 @@ const VIEWER_FILTERS: &[(&str, &[&str])] = &[
     ("PDF", &["pdf"]),
     ("Documents", &["docx"]),
     ("Text", &["txt", "md", "markdown", "json", "log", "csv"]),
+    ("All files", &["*"]),
 ];
 
 #[derive(Serialize)]
@@ -112,15 +115,64 @@ pub fn sort_entries(entries: &mut [DirEntry]) {
         if a.is_dir != b.is_dir {
             if a.is_dir { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
         } else {
-            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            natural_cmp(&a.name, &b.name)
         }
     });
+}
+
+/// Porównanie „naturalne": ciągi cyfr traktuje jak liczby, więc plik2 < plik10
+/// (odpowiednik localeCompare(..., { numeric: true }) z Electrona).
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let (mut x, mut y) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (x.peek().copied(), y.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(ca), Some(cb)) => {
+                if ca.is_ascii_digit() && cb.is_ascii_digit() {
+                    let na: String = std::iter::from_fn(|| x.next_if(char::is_ascii_digit)).collect();
+                    let nb: String = std::iter::from_fn(|| y.next_if(char::is_ascii_digit)).collect();
+                    // Porównanie bez wiodących zer; przy remisie krótszy zapis wygrywa.
+                    let (ta, tb) = (na.trim_start_matches('0'), nb.trim_start_matches('0'));
+                    match ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb)).then_with(|| na.len().cmp(&nb.len())) {
+                        std::cmp::Ordering::Equal => {}
+                        ord => return ord,
+                    }
+                } else {
+                    let (la, lb) = (ca.to_lowercase().next().unwrap_or(ca), cb.to_lowercase().next().unwrap_or(cb));
+                    if la != lb {
+                        return la.cmp(&lb);
+                    }
+                    x.next();
+                    y.next();
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::natural_cmp;
+    use std::cmp::Ordering::*;
+
+    #[test]
+    fn sortuje_liczby_naturalnie() {
+        assert_eq!(natural_cmp("plik2", "plik10"), Less);
+        assert_eq!(natural_cmp("plik10", "plik2"), Greater);
+        assert_eq!(natural_cmp("a", "B"), Less);          // bez rozroznienia wielkosci
+        assert_eq!(natural_cmp("v1.9", "v1.10"), Less);
+        assert_eq!(natural_cmp("007", "7"), Greater);     // remis liczbowy -> dluzszy zapis dalej
+        assert_eq!(natural_cmp("plik", "plik"), Equal);
+        assert_eq!(natural_cmp("plik", "plik1"), Less);
+    }
 }
 
 // ---- Commands ----
 
 // dialog.ts saveNotes: notes-<ISO-ts>.txt with ':'/'T' -> '-'.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dialog_save_notes(content: String) -> Value {
     let ts = iso_stamp();
     let mut dlg = rfd::FileDialog::new();
@@ -138,7 +190,7 @@ pub fn dialog_save_notes(content: String) -> Value {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_open() -> Result<Option<LoadedFile>, String> {
     let mut dlg = rfd::FileDialog::new();
     dlg = dlg.set_title("Open file");
@@ -151,12 +203,12 @@ pub fn file_open() -> Result<Option<LoadedFile>, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_read(file_path: String) -> Result<LoadedFile, String> {
     read_file(&file_path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_read_dir(dir_path: String) -> Result<DirListing, String> {
     // Empty path = home dir (explorer root), like files.ts readDir.
     let abs = if dir_path.trim().is_empty() {
@@ -179,7 +231,7 @@ pub fn file_read_dir(dir_path: String) -> Result<DirListing, String> {
     Ok(DirListing { path: abs.to_string_lossy().into_owned(), parent, entries })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_delete(path: String) -> Value {
     let p = Path::new(&path);
     let res = if p.is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) };
@@ -189,7 +241,7 @@ pub fn file_delete(path: String) -> Value {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_mkdir(dir: String, name: String) -> Value {
     let target = expand_home(&dir).join(&name);
     match std::fs::create_dir(&target) {
@@ -198,7 +250,7 @@ pub fn file_mkdir(dir: String, name: String) -> Value {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_create(dir: String, name: String) -> Value {
     let target = expand_home(&dir).join(&name);
     // create_new = Node's 'wx' flag: fails instead of overwriting an existing file.
@@ -208,14 +260,14 @@ pub fn file_create(dir: String, name: String) -> Value {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_save(file_path: String, content: String) -> Value {
     json!({ "ok": std::fs::write(&file_path, content).is_ok() })
 }
 
 // files.ts saveAttachment: stored under app data dir (Electron userData) / notes-files,
 // name prefixed with a base36 timestamp+random so attachments never collide.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn notes_save_attachment(app: AppHandle, name: String, base64: String) -> Result<NoteFile, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("notes-files");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -231,7 +283,7 @@ pub fn notes_save_attachment(app: AppHandle, name: String, base64: String) -> Re
     Ok(NoteFile { name: display, path: file.to_string_lossy().into_owned(), mime })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_read_data_url(file_path: String) -> Result<String, String> {
     let buf = std::fs::read(&file_path).map_err(|e| e.to_string())?;
     Ok(format!(
@@ -242,7 +294,7 @@ pub fn file_read_data_url(file_path: String) -> Result<String, String> {
 }
 
 // files.ts saveAs: save dialog (Finder) + copy the file to the chosen location.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_save_as(src_path: String, suggested_name: String) -> Result<Value, String> {
     let dlg = rfd::FileDialog::new()
         .set_title("Save to disk")
@@ -256,7 +308,7 @@ pub fn file_save_as(src_path: String, suggested_name: String) -> Result<Value, S
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dialog_open_dir() -> Option<String> {
     rfd::FileDialog::new()
         .set_title("Choose project folder")

@@ -1,9 +1,18 @@
-// Tauri core for the vibe-coder port.
-// Phase 0 (done): multiwebview browser-pane tiling (add/move/close_pane).
-// Phase 2 (done): native PTY core with batched output (pty module).
-// Phase 1 (done): persistence (store_*) + theme.
-// Phase 3 (now): full IPC surface ported from the Electron main process — files/dialogs,
-// SSH/SFTP explorer, agent CLI management, RAM monitor.
+// Rdzeń Tauri dla BrainDead — pełny odpowiednik procesu głównego z Electrona:
+// kafelkowe panele przeglądarki (multiwebview), PTY, pliki/dialogi, SSH/SFTP, agenci AI,
+// monitor RAM, persystencja i motyw.
+//
+// DWIE ZASADY, KTÓRE ŁATWO ZŁAMAĆ PRZY EDYCJI TEGO PLIKU:
+//
+// 1. Zdarzenia do interfejsu idą przez `emit_to(UI, …)`, NIGDY przez `emit(…)`.
+//    Panele przeglądarki to webview-dzieci tego samego okna, ładujące dowolne strony
+//    z internetu. `emit` rozgłasza do wszystkich webview — czyli oddawałby stronie
+//    pty:data (wyjście wszystkich terminali: klucze API, tokeny, sesje SSH).
+//
+// 2. Komendy dotykające okna/webview (pane_*, theme_set_dark) MUSZĄ zostać synchroniczne.
+//    `#[tauri::command(async)]` przenosi je na pulę wątków, a AppKit/WebKit wymaga
+//    wątku głównego. Komendy IO (pliki, ssh, agenci, store, pty_spawn) są odwrotnie:
+//    muszą być `(async)`, bo inaczej blokują UI.
 mod agents;
 mod browser_script;
 mod files;
@@ -24,14 +33,30 @@ use tauri::{
 };
 use tauri_plugin_opener::OpenerExt;
 
+/// Etykieta webview interfejsu. Jedyny odbiorca zdarzeń aplikacji — patrz zasada 1 wyżej.
+const UI: &str = "ui";
+
+/// Normalny UA Chrome. Bez tego część witryn (YouTube/Google) serwuje połamane zasoby
+/// — port `CHROME_UA` z BrowserPane.tsx w Electronie. Na WebKitGTK to warunek działania.
+const CHROME_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
 fn pane_label(id: &str) -> String {
     format!("pane:{id}")
+}
+
+/// Identyfikator magazynu danych (cookies/localStorage) dla przestrzeni roboczej —
+/// odpowiednik partycji `persist:browser-ws<N>` z Electrona. Panele w tej samej
+/// przestrzeni dzielą logowania, różne przestrzenie są od siebie odcięte.
+fn ws_data_store(ws: u32) -> [u8; 16] {
+    let mut id = *b"braindead-ws\0\0\0\0";
+    id[12..].copy_from_slice(&ws.to_le_bytes());
+    id
 }
 
 // ---- Browser panes (native child webviews) — proven in Phase 0 ----
 
 #[tauri::command]
-fn add_pane(app: AppHandle, id: String, url: String, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+fn add_pane(app: AppHandle, id: String, url: String, ws: u32, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let label = pane_label(&id);
     if app.get_webview(&label).is_some() {
         return Ok(());
@@ -66,18 +91,21 @@ fn add_pane(app: AppHandle, id: String, url: String, x: f64, y: f64, w: f64, h: 
                         "win-motion" => Some(("pane:win-motion", json!({ "id": nav_id, "act": param("act") }))),
                         "win-prefix" => Some(("pane:win-prefix", json!({ "id": nav_id }))),
                         "vim-hello" => Some(("pane:vim-hello", json!({ "id": nav_id }))),
+                        "media" => Some(("pane:media", json!({ "id": nav_id, "on": param("on").as_deref() == Some("1") }))),
+                        // Nawigacja w SPA — dla UI nieodróżnialna od zwykłej zmiany adresu.
+                        "spa-nav" => Some(("pane:navigated", json!({ "id": nav_id, "url": param("url") }))),
                         _ => None,
                     };
                     if let Some((event, body)) = payload {
-                        let _ = nav_app.emit(event, body);
+                        let _ = nav_app.emit_to(UI, event, body);
                     }
                     return false;
                 }
-                let _ = nav_app.emit("pane:navigated", json!({ "id": nav_id, "url": url.to_string() }));
+                let _ = nav_app.emit_to(UI, "pane:navigated", json!({ "id": nav_id, "url": url.to_string() }));
                 true // allow all real navigations
             })
             .on_document_title_changed(move |_wv, title| {
-                let _ = title_app.emit("pane:title", json!({ "id": title_id, "title": title }));
+                let _ = title_app.emit_to(UI, "pane:title", json!({ "id": title_id, "title": title }));
             })
             // target=_blank / window.open: deny the in-app window, open in the system browser.
             .on_new_window(move |url, _features| {
@@ -86,7 +114,10 @@ fn add_pane(app: AppHandle, id: String, url: String, x: f64, y: f64, w: f64, h: 
             })
             // Port of the Electron <webview> preload: scroll-click/⌘-click opens a tab,
             // app keybinds beat the page, vim-mode keys scroll/hint (browser_script.rs).
-            .initialization_script(browser_script::script(&id)),
+            .initialization_script(browser_script::script(&id))
+            .user_agent(CHROME_UA)
+            // Cookies/sesje wspólne w obrębie przestrzeni roboczej, odcięte między nimi.
+            .data_store_identifier(ws_data_store(ws)),
         LogicalPosition::new(x, y),
         LogicalSize::new(w, h),
     )
@@ -142,8 +173,8 @@ fn pane_eval(app: AppHandle, id: String, js: String) -> Result<(), String> {
 
 // ---- Terminal (native PTY + batched output) ----
 
-#[tauri::command]
-fn pty_spawn(app: AppHandle, mgr: State<PtyManager>, id: String, cols: u16, rows: u16, cwd: Option<String>, agent: Option<AgentOpts>) -> Result<bool, String> {
+#[tauri::command(async)]
+fn pty_spawn(app: AppHandle, mgr: State<PtyManager>, id: String, cols: u16, rows: u16, cwd: Option<String>, agent: Option<AgentOpts>) -> Result<pty::SpawnResult, String> {
     mgr.spawn(app, id, cols, rows, cwd, agent)
 }
 
@@ -182,7 +213,62 @@ fn state_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("state.json"))
 }
 
-#[tauri::command]
+/// Katalog danych aplikacji w wersji Electronowej (`app.getPath('userData')`, czyli
+/// nazwa z package.json — "vibe-coder"). Tauri używa identyfikatora bundla, więc bez
+/// migracji użytkownik po przesiadce traci przestrzenie, notatki i tokeny agentów.
+fn electron_data_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    return home.map(|h| h.join("Library/Application Support/vibe-coder"));
+    #[cfg(target_os = "windows")]
+    return std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("vibe-coder"));
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return home.map(|h| h.join(".config/vibe-coder"));
+}
+
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        if entry.file_type()?.is_dir() {
+            copy_tree(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// Jednorazowa migracja z instalacji Electronowej. Odpala się tylko wtedy, gdy po stronie
+/// Tauri nie ma jeszcze state.json — czyli nigdy nie nadpisze świeższych danych.
+/// Partycji przeglądarki nie da się przenieść (format Chromium ≠ WebKit) — logowania
+/// w panelach trzeba odtworzyć ręcznie.
+fn migrate_from_electron(app: &AppHandle) {
+    let Ok(target) = state_file(app) else { return };
+    if target.exists() {
+        return;
+    }
+    let Some(old) = electron_data_dir() else { return };
+    if !old.join("state.json").is_file() {
+        return;
+    }
+    let Some(dir) = target.parent() else { return };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let _ = std::fs::copy(old.join("state.json"), &target);
+    // notes-files = załączniki notatek; claude/ i agents/ = izolowane configi z tokenami.
+    for sub in ["notes-files", "claude", "agents"] {
+        let src = old.join(sub);
+        if src.is_dir() {
+            let _ = copy_tree(&src, &dir.join(sub));
+        }
+    }
+    println!("[migracja] przeniesiono stan z {}", old.display());
+}
+
+#[tauri::command(async)]
 fn store_load(app: AppHandle) -> Result<Value, String> {
     let mut state = default_state();
     if let Ok(path) = state_file(&app) {
@@ -199,7 +285,7 @@ fn store_load(app: AppHandle) -> Result<Value, String> {
     Ok(state)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn store_save(app: AppHandle, state: Value) -> Result<(), String> {
     let path = state_file(&app)?;
     if let Some(dir) = path.parent() {
@@ -229,8 +315,9 @@ pub fn run() {
             // macOS window mirroring Electron's titleBarStyle 'hiddenInset' + transparent bg
             // (rounded-corner support); #0e0f13 is the app bg, used as the fallback color.
             let win = WindowBuilder::new(app, "main")
-                .title("vibe-coder (Tauri)")
+                .title("BrainDead")
                 .inner_size(1280.0, 800.0)
+                .min_inner_size(800.0, 500.0)
                 .transparent(true)
                 .title_bar_style(TitleBarStyle::Overlay)
                 .hidden_title(true)
@@ -246,6 +333,7 @@ pub fn run() {
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(1280.0, 800.0),
             )?;
+            migrate_from_electron(app.handle());
             ram::start(app.handle().clone());
 
             // Native Edit menu: without one, macOS WKWebView gets no ⌘C/⌘V/⌘X/⌘A
@@ -305,6 +393,18 @@ pub fn run() {
             if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 app.state::<PtyManager>().kill_all();
                 app.state::<SshManager>().disconnect_all();
+            }
+            // Klik w ikonę w docku przy schowanym oknie — odpowiednik app.on('activate').
+            // ponytail: tylko przywracamy istniejące okno; pełne zachowanie Electrona
+            // (aplikacja żyje bez okien) wymagałoby prevent_exit i odtwarzania okna,
+            // a i tak `window-all-closed` w Electronie ubija wszystkie shelle.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                if let Some(win) = app.get_window("main") {
+                    let _ = win.unminimize();
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
             }
         });
 }

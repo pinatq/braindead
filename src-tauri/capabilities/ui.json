@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ui",
+  "description": "Uprawnienia TYLKO dla webview interfejsu aplikacji. Celowo zakres 'webviews', nie 'windows': capability z 'windows' obejmuje WSZYSTKIE webview okna, a panele przeglądarki (pane:*) to dzieci okna 'main' ładujące dowolne strony z internetu — dostałyby wtedy core:event:allow-listen i mogłyby nasłuchiwać pty:data, czyli czytać wyjście wszystkich terminali.",
+  "webviews": ["ui"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize"
+  ]
+}
