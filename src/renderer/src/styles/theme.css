@@ -937,6 +937,15 @@ button:disabled {
   background: #fff;
 }
 
+/* Pasek find (⌘F) żyje w webview interfejsu, a natywne panele przeglądarki unoszą się NAD nim.
+   Na czas wyszukiwania zsuwamy treść panelu o wysokość paska — placeholder się zmniejsza,
+   ResizeObserver w BrowserPane przesuwa natywny widok i pasek zostaje widoczny.
+   (Ukrycie panelu odpada: szukamy przecież w tym, co on pokazuje.) */
+.app--find .browser-view {
+  top: 40px;
+  height: auto;
+}
+
 /* ---------- Pasek zakładek (widoczny gdy >1 zakładka) ---------- */
 .browser-tabs {
   display: flex;

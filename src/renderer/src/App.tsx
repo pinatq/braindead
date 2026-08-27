@@ -15,6 +15,7 @@ export default function App(): JSX.Element {
   const setRamStats = useStore((s) => s.setRamStats)
   const forceDark = useStore((s) => s.forceDark)
   const current = useStore((s) => s.current)
+  const findOpen = useStore((s) => s.findOpen)
   // Wszystkie zamontowane przestrzenie trzymamy w DOM (bieżąca widoczna, reszta ukryta),
   // by przeglądarki nie przeładowywały się po przełączeniu workspace.
   const mountedIds = useStore(
@@ -42,7 +43,7 @@ export default function App(): JSX.Element {
   useShortcuts()
 
   return (
-    <div className="app">
+    <div className={'app' + (findOpen ? ' app--find' : '')}>
       <Toolbar />
       <div className="workspace-area">
         {mountedIds.map((id) => (

@@ -732,5 +732,8 @@ export const useStore = create<State>((set, get) => ({
  * BrowserPane chowa więc natywne widoki na czas trwania overlaya.
  */
 export function uiOverlayOpen(s: State): boolean {
-  return s.settingsOpen || s.notesOpen || s.findOpen || s.layoutPickerOpen || s.ramPanelOpen || s.gotoOpen
+  // findOpen CELOWO poza listą: pasek wyszukiwania służy do szukania NA STRONIE, więc
+  // schowanie panelu odebrałoby mu sens. Zamiast tego .app--find zsuwa natywny widok
+  // w dół o wysokość paska (theme.css), żeby był widoczny nad treścią.
+  return s.settingsOpen || s.notesOpen || s.layoutPickerOpen || s.ramPanelOpen || s.gotoOpen
 }
