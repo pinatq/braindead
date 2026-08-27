@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+src-tauri/target
+*.log
+.DS_Store
+*.tsbuildinfo
+
+# Sekrety i lokalne ustawienia
+.env
+.env.*
+*.local
+
+.vscode/*
+!.vscode/extensions.json
+.idea

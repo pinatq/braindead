@@ -1,0 +1,45 @@
+[package]
+name = "vibe-coder-tauri"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "vibe_coder_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `unstable` enables the multiwebview API (Window::add_child / multiple webviews per window) —
+# the core of the browser-pane tiling spike (Phase 0 GATE).
+# `macos-private-api` un-gates WebviewBuilder::transparent on macOS (UI webview over a
+# transparent window, Electron `transparent`/rounded-corners equivalent).
+tauri = { version = "2", features = ["unstable", "macos-private-api"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Native PTY core (replaces node-pty). portable-pty = wezterm's cross-platform pty.
+portable-pty = "0.8"
+base64 = "0.22"
+# Native file open/save/folder dialogs (port of Electron's dialog.* in files.ts/dialog.ts).
+rfd = "0.15"
+# SSH/SFTP for the remote explorer (port of the ssh2 npm lib usage in ssh.ts).
+# vendored-openssl: this Mac has no pkg-config, so link OpenSSL from source instead of
+# hunting for Homebrew paths.
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+# RAM monitor (port of app.getAppMetrics + os.freemem/totalmem in index.ts).
+sysinfo = "0.33"
+# Fallback mime lookup for data-urls/attachments (files.ts's static map covers the rest).
+mime_guess = "2"
+# Login-shell detection (getpwuid) — fixes the shell prompt when launched from Finder/Dock,
+# where the GUI env has no $SHELL (pty.rs::login_shell).
+libc = "0.2"
+

@@ -1,0 +1,254 @@
+// Tauri-backed reimplementation of the Electron preload's `window.api`
+// (was src/preload/index.ts). Identical shape, so the ported renderer needs ZERO changes:
+//   ipcRenderer.invoke  -> invoke()
+//   ipcRenderer.send    -> invoke() (fire-and-forget)
+//   ipcRenderer.on      -> event.listen() with the same fan-out (one listener -> many subs)
+// Importing this module assigns window.api synchronously, before <App/> mounts.
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import type {
+  PersistedState,
+  PtyEnsureOpts,
+  PtyDataEvent,
+  PtyExitEvent,
+  LoadedFile,
+  NoteFile,
+  RamStats,
+  DirListing,
+  SshConfig,
+  SshResult,
+  ClaudeCliStatus
+} from '../../shared/types'
+
+// Fan-out subscriber sets (avoid MaxListeners-style duplication across up to 16 panes).
+const dataCbs = new Set<(e: PtyDataEvent) => void>()
+const exitCbs = new Set<(e: PtyExitEvent) => void>()
+const ramCbs = new Set<(s: RamStats) => void>()
+const sshProgCbs = new Set<(e: { profileId: string; stage: string }) => void>()
+// Native browser-pane events (multiwebview). id = full native id `${paneId}:${tabId}`.
+const paneNavCbs = new Set<(e: { id: string; url: string }) => void>()
+const paneTitleCbs = new Set<(e: { id: string; title: string }) => void>()
+// Events emitted BY the injected browser script (port of the Electron webview preload).
+const paneOpenTabCbs = new Set<(e: { id: string; url: string }) => void>()
+const paneRunBindCbs = new Set<(e: { id: string; combo: string }) => void>()
+const paneActivateCbs = new Set<(e: { id: string }) => void>()
+const paneFocusUrlCbs = new Set<(e: { id: string }) => void>()
+const paneWinMotionCbs = new Set<(e: { id: string; act: string }) => void>()
+const paneWinPrefixCbs = new Set<(e: { id: string }) => void>()
+const paneVimHelloCbs = new Set<(e: { id: string }) => void>()
+
+// PTY output arrives base64 (raw bytes survive the JSON event boundary). A per-terminal
+// streaming UTF-8 decoder reassembles multibyte sequences split across 8ms flush batches.
+const decoders = new Map<string, TextDecoder>()
+const b64ToBytes = (b: string): Uint8Array => Uint8Array.from(atob(b), (c) => c.charCodeAt(0))
+
+void listen<[string, string]>('pty:data', (e) => {
+  const [id, b64] = e.payload
+  let dec = decoders.get(id)
+  if (!dec) {
+    dec = new TextDecoder('utf-8')
+    decoders.set(id, dec)
+  }
+  const data = dec.decode(b64ToBytes(b64), { stream: true })
+  if (data) dataCbs.forEach((cb) => cb({ id, data }))
+})
+void listen<string>('pty:exit', (e) => {
+  const id = e.payload
+  decoders.delete(id)
+  exitCbs.forEach((cb) => cb({ id, exitCode: 0 }))
+})
+void listen<RamStats>('ram:stats', (e) => ramCbs.forEach((cb) => cb(e.payload)))
+void listen<{ profileId: string; stage: string }>('agent:sshProgress', (e) =>
+  sshProgCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string; url: string }>('pane:navigated', (e) =>
+  paneNavCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string; title: string }>('pane:title', (e) =>
+  paneTitleCbs.forEach((cb) => cb(e.payload))
+)
+// Zdarzenia ze skryptu wstrzykiwanego do natywnych webview (port preloadu webview z master).
+void listen<{ id: string; url: string }>('pane:open-tab', (e) =>
+  paneOpenTabCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string; combo: string }>('pane:run-bind', (e) =>
+  paneRunBindCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string }>('pane:activate', (e) => paneActivateCbs.forEach((cb) => cb(e.payload)))
+void listen<{ id: string }>('pane:focus-url', (e) => paneFocusUrlCbs.forEach((cb) => cb(e.payload)))
+void listen<{ id: string; act: string }>('pane:win-motion', (e) =>
+  paneWinMotionCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string }>('pane:win-prefix', (e) =>
+  paneWinPrefixCbs.forEach((cb) => cb(e.payload))
+)
+void listen<{ id: string }>('pane:vim-hello', (e) =>
+  paneVimHelloCbs.forEach((cb) => cb(e.payload))
+)
+
+const api = {
+  pty: {
+    ensure: async (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean }> => {
+      // pty_spawn returns `existed`; on re-attach the backend replays its scrollback
+      // ring as a normal pty:data event (we subscribed at module load, so nothing is lost).
+      const existed = await invoke<boolean>('pty_spawn', {
+        id,
+        cols: opts.cols,
+        rows: opts.rows,
+        cwd: opts.cwd ?? null,
+        agent: opts.agent ?? null
+      })
+      return { existed }
+    },
+    input: (id: string, data: string): void => {
+      void invoke('pty_write', { id, data })
+    },
+    resize: (id: string, cols: number, rows: number): void => {
+      void invoke('pty_resize', { id, cols, rows })
+    },
+    kill: (id: string): void => {
+      void invoke('pty_kill', { id })
+    },
+    onData: (cb: (e: PtyDataEvent) => void): (() => void) => {
+      dataCbs.add(cb)
+      return () => void dataCbs.delete(cb)
+    },
+    onExit: (cb: (e: PtyExitEvent) => void): (() => void) => {
+      exitCbs.add(cb)
+      return () => void exitCbs.delete(cb)
+    }
+  },
+  store: {
+    load: (): Promise<PersistedState> => invoke('store_load'),
+    save: (state: PersistedState): Promise<void> => invoke('store_save', { state })
+  },
+  dialog: {
+    saveNotes: (content: string): Promise<{ saved: boolean; path?: string }> =>
+      invoke('dialog_save_notes', { content })
+  },
+  files: {
+    open: (): Promise<LoadedFile | null> => invoke('file_open'),
+    read: (filePath: string): Promise<LoadedFile> => invoke('file_read', { filePath }),
+    readDir: (dirPath: string): Promise<DirListing> => invoke('file_read_dir', { dirPath }),
+    deletePath: (p: string): Promise<{ ok: boolean; error?: string }> => invoke('file_delete', { path: p }),
+    makeDir: (dir: string, name: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      invoke('file_mkdir', { dir, name }),
+    makeFile: (dir: string, name: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      invoke('file_create', { dir, name }),
+    save: (filePath: string, content: string): Promise<{ ok: boolean }> =>
+      invoke('file_save', { filePath, content }),
+    saveAttachment: (name: string, base64: string): Promise<NoteFile> =>
+      invoke('notes_save_attachment', { name, base64 }),
+    readDataUrl: (filePath: string): Promise<string> => invoke('file_read_data_url', { filePath }),
+    saveAs: (srcPath: string, suggestedName: string): Promise<{ saved: boolean; path?: string }> =>
+      invoke('file_save_as', { srcPath, suggestedName }),
+    chooseDir: (): Promise<string | null> => invoke('dialog_open_dir')
+  },
+  ssh: {
+    connect: (cfg: SshConfig): Promise<SshResult> => invoke('ssh_connect', { cfg }),
+    disconnect: (id: string): Promise<void> => invoke('ssh_disconnect', { id }),
+    readDir: (id: string, p: string): Promise<DirListing> => invoke('ssh_read_dir', { id, path: p }),
+    readFile: (id: string, p: string): Promise<LoadedFile> => invoke('ssh_read_file', { id, path: p }),
+    writeFile: (id: string, p: string, content: string): Promise<{ ok: boolean; error?: string }> =>
+      invoke('ssh_write_file', { id, path: p, content }),
+    makeDir: (id: string, dir: string, name: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      invoke('ssh_mkdir', { id, dir, name }),
+    makeFile: (id: string, dir: string, name: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      invoke('ssh_create', { id, dir, name }),
+    delete: (id: string, p: string): Promise<{ ok: boolean; error?: string }> =>
+      invoke('ssh_delete', { id, path: p })
+  },
+  agents: {
+    status: (cmd: string): Promise<ClaudeCliStatus> => invoke('agent_status', { cmd }),
+    install: (toolId: string): Promise<{ ok: boolean; output: string }> =>
+      invoke('agent_install', { toolId }),
+    sshSync: (command: string, toolId: string, profileId: string): Promise<{ ok: boolean; output: string }> =>
+      invoke('agent_ssh_sync', { command, toolId, profileId }),
+    onSshProgress: (cb: (e: { profileId: string; stage: string }) => void): (() => void) => {
+      sshProgCbs.add(cb)
+      return () => void sshProgCbs.delete(cb)
+    }
+  },
+  ram: {
+    onStats: (cb: (s: RamStats) => void): (() => void) => {
+      ramCbs.add(cb)
+      return () => void ramCbs.delete(cb)
+    }
+  },
+  theme: {
+    setForceDark: (on: boolean): void => {
+      void invoke('theme_set_dark', { on })
+    }
+  },
+  // Native browser panes: child webviews labeled `pane:{id}` floating over the ui webview.
+  // Rects are CSS px in window coordinates (getBoundingClientRect of the placeholder div).
+  // Fire-and-forget wrappers swallow "no such pane" races (view closed mid-call); add/move
+  // stay awaitable so callers can sequence follow-up moves/visibility after creation.
+  panes: {
+    add: (id: string, url: string, x: number, y: number, w: number, h: number): Promise<void> =>
+      invoke<void>('add_pane', { id, url, x, y, w, h }).catch(() => {}),
+    move: (id: string, x: number, y: number, w: number, h: number): Promise<void> =>
+      invoke<void>('move_pane', { id, x, y, w, h }).catch(() => {}),
+    close: (id: string): void => {
+      void invoke('close_pane', { id }).catch(() => {})
+    },
+    setVisible: (id: string, visible: boolean): void => {
+      void invoke('set_pane_visible', { id, visible }).catch(() => {})
+    },
+    navigate: (id: string, url: string): void => {
+      void invoke('pane_navigate', { id, url }).catch(() => {})
+    },
+    reload: (id: string): void => {
+      void invoke('pane_reload', { id }).catch(() => {})
+    },
+    eval: (id: string, js: string): void => {
+      void invoke('pane_eval', { id, js }).catch(() => {})
+    },
+    onNavigated: (cb: (e: { id: string; url: string }) => void): (() => void) => {
+      paneNavCbs.add(cb)
+      return () => void paneNavCbs.delete(cb)
+    },
+    onTitle: (cb: (e: { id: string; title: string }) => void): (() => void) => {
+      paneTitleCbs.add(cb)
+      return () => void paneTitleCbs.delete(cb)
+    },
+    onOpenTab: (cb: (e: { id: string; url: string }) => void): (() => void) => {
+      paneOpenTabCbs.add(cb)
+      return () => void paneOpenTabCbs.delete(cb)
+    },
+    onRunBind: (cb: (e: { id: string; combo: string }) => void): (() => void) => {
+      paneRunBindCbs.add(cb)
+      return () => void paneRunBindCbs.delete(cb)
+    },
+    onActivate: (cb: (e: { id: string }) => void): (() => void) => {
+      paneActivateCbs.add(cb)
+      return () => void paneActivateCbs.delete(cb)
+    },
+    onFocusUrl: (cb: (e: { id: string }) => void): (() => void) => {
+      paneFocusUrlCbs.add(cb)
+      return () => void paneFocusUrlCbs.delete(cb)
+    },
+    onWinMotion: (cb: (e: { id: string; act: string }) => void): (() => void) => {
+      paneWinMotionCbs.add(cb)
+      return () => void paneWinMotionCbs.delete(cb)
+    },
+    onWinPrefix: (cb: (e: { id: string }) => void): (() => void) => {
+      paneWinPrefixCbs.add(cb)
+      return () => void paneWinPrefixCbs.delete(cb)
+    },
+    onVimHello: (cb: (e: { id: string }) => void): (() => void) => {
+      paneVimHelloCbs.add(cb)
+      return () => void paneVimHelloCbs.delete(cb)
+    }
+  }
+}
+
+declare global {
+  interface Window {
+    api: typeof api
+  }
+}
+
+window.api = api
+
+export {}
