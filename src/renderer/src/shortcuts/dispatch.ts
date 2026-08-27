@@ -172,6 +172,15 @@ export function runBind(actionId: string): void {
     if (active?.mode === 'browser' && s.activePaneId) s.toggleAutoScroll(s.activePaneId)
     return
   }
+  // Zoom panelu (fullscreen w granicach aplikacji). Sprawdzane przed ogólnym `pane.<n>` niżej.
+  if (actionId === 'pane.zoom') {
+    if (s.activePaneId) s.toggleZoomPane(s.activePaneId)
+    return
+  }
+  if (actionId === 'pane.zoomExit') {
+    if (s.zoomPaneId) s.toggleZoomPane(s.zoomPaneId)
+    return
+  }
   if (actionId === 'workspace.prev') return s.prevWorkspace()
   if (actionId === 'workspace.next') return s.nextWorkspace()
   if (actionId === 'workspace.goto') return s.setGotoOpen(true)

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "claude",
+    "name": "Claude Code",
+    "cmd": "claude",
+    "configEnv": "CLAUDE_CONFIG_DIR",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "install": { "sh": "curl -fsSL https://claude.ai/install.sh | bash", "ps": "irm https://claude.ai/install.ps1 | iex" },
+    "authNote": "/login (OAuth) or ANTHROPIC_API_KEY"
+  },
+  {
+    "id": "gemini",
+    "name": "Gemini CLI",
+    "cmd": "gemini",
+    "apiKeyEnv": "GEMINI_API_KEY",
+    "install": { "sh": "npm install -g @google/gemini-cli", "ps": "npm install -g @google/gemini-cli" },
+    "authNote": "Google login or GEMINI_API_KEY"
+  },
+  {
+    "id": "codex",
+    "name": "Codex CLI",
+    "cmd": "codex",
+    "configEnv": "CODEX_HOME",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "install": { "sh": "npm install -g @openai/codex", "ps": "npm install -g @openai/codex" },
+    "authNote": "ChatGPT login or OPENAI_API_KEY"
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi CLI",
+    "cmd": "kimi",
+    "configEnv": "KIMI_CODE_HOME",
+    "install": {
+      "sh": "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
+      "ps": "irm https://code.kimi.com/kimi-code/install.ps1 | iex"
+    },
+    "authNote": "/login (OAuth) or KIMI_API_KEY in config.toml"
+  },
+  {
+    "id": "aider",
+    "name": "Aider",
+    "cmd": "aider",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "install": { "sh": "python3 -m pip install -U aider-chat" },
+    "authNote": "API key (OpenAI/Anthropic/…) via env"
+  },
+  {
+    "id": "goose",
+    "name": "Goose",
+    "cmd": "goose",
+    "install": { "sh": "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash" },
+    "authNote": "goose configure"
+  },
+  {
+    "id": "opencode",
+    "name": "opencode",
+    "cmd": "opencode",
+    "install": { "sh": "curl -fsSL https://opencode.ai/install | bash" },
+    "authNote": "opencode auth login"
+  },
+  {
+    "id": "q",
+    "name": "Amazon Q",
+    "cmd": "q",
+    "authNote": "q login"
+  }
+]

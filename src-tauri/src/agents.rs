@@ -12,8 +12,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ssh::parse_command;
 
-// Registry mirror of shared/agents.ts. config_env isolates the tool's config dir per
-// profile; api_key_env carries the key for "api" profiles; install_sh is the posix installer.
+// config_env izoluje katalog configu narzędzia per profil; api_key_env niesie klucz dla
+// profili typu "api"; install_sh to instalator posixowy.
 pub struct AgentTool {
     pub id: &'static str,
     pub name: &'static str,
@@ -23,17 +23,9 @@ pub struct AgentTool {
     pub install_sh: Option<&'static str>,
 }
 
-pub const AGENT_TOOLS: &[AgentTool] = &[
-    AgentTool { id: "claude", name: "Claude Code", cmd: "claude", config_env: Some("CLAUDE_CONFIG_DIR"), api_key_env: Some("ANTHROPIC_API_KEY"), install_sh: Some("curl -fsSL https://claude.ai/install.sh | bash") },
-    AgentTool { id: "gemini", name: "Gemini CLI", cmd: "gemini", config_env: None, api_key_env: Some("GEMINI_API_KEY"), install_sh: Some("npm install -g @google/gemini-cli") },
-    AgentTool { id: "codex", name: "Codex CLI", cmd: "codex", config_env: Some("CODEX_HOME"), api_key_env: Some("OPENAI_API_KEY"), install_sh: Some("npm install -g @openai/codex") },
-    AgentTool { id: "aider", name: "Aider", cmd: "aider", config_env: None, api_key_env: Some("OPENAI_API_KEY"), install_sh: Some("python3 -m pip install -U aider-chat") },
-    AgentTool { id: "goose", name: "Goose", cmd: "goose", config_env: None, api_key_env: None, install_sh: Some("curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash") },
-    AgentTool { id: "opencode", name: "opencode", cmd: "opencode", config_env: None, api_key_env: None, install_sh: Some("curl -fsSL https://opencode.ai/install | bash") },
-    // KIMI_CODE_HOME izoluje config per profil; klucz API nie jest czytany z env (config.toml),
-    // dlatego api_key_env = None (patrz komentarz w shared/agents.ts).
-    AgentTool { id: "kimi", name: "Kimi CLI", cmd: "kimi", config_env: Some("KIMI_CODE_HOME"), api_key_env: None, install_sh: Some("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash") },
-];
+// Lista narzędzi pochodzi z src/shared/agents.json — ten sam plik czyta frontend.
+// build.rs zamienia go na `pub const AGENT_TOOLS`, więc obie strony nie mogą się rozjechać.
+include!(concat!(env!("OUT_DIR"), "/agent_tools.rs"));
 
 pub fn agent_tool(id: &str) -> Option<&'static AgentTool> {
     AGENT_TOOLS.iter().find(|t| t.id == id)

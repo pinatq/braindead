@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { useStore, isRamOver } from '../state/store'
+import { useStore, isRamOver, uiOverlayOpen } from '../state/store'
 import { actionForCombo } from '../shortcuts/binds'
 import { PANE_CMD_EVENT, runBind, runWindowMotion, armWinPending, type PaneCmd } from '../shortcuts/dispatch'
 import { FIND_EVENT, type FindDetail } from '../shortcuts/find'
@@ -12,7 +12,8 @@ const NEW_TAB_URL = 'https://duckduckgo.com'
 // karta, klik w treść → aktywacja panelu, bindy programu z priorytetem nad stroną, klawisze
 // vima (scroll/hinty/okna) oraz ':' → pasek adresu. Find-in-page z master (natywne findInPage)
 // portujemy przez `window.find()` wstrzykiwanym pane_eval. Znane ograniczenia portu:
-// - brak detekcji grania mediów — auto-usypianie patrzy wyłącznie na czas ostatniej aktywności.
+// - historia wstecz/dalej liczona ręcznie (WKWebView nie zdradza canGoBack/canGoForward);
+//   wstrzyknięty skrypt raportuje też nawigacje SPA, żeby pasek adresu nie został w tyle.
 
 interface Props {
   paneId: string
@@ -72,11 +73,13 @@ function normalizeUrl(input: string): string {
 function NativeBrowserView({
   fullId,
   url,
+  ws,
   active
 }: {
   fullId: string
   url: string // adres startowy (przy add); późniejsze nawigacje idą przez panes.navigate
-  active: boolean // aktywna karta w widocznym workspace
+  ws: number // przestrzeń robocza = magazyn cookies (odpowiednik partycji persist:)
+  active: boolean // widoczna karta: aktywna, w bieżącym workspace, bez overlaya i zoomu obcego panelu
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const activeRef = useRef(active)
@@ -103,7 +106,7 @@ function NativeBrowserView({
       if (ok && !added) {
         added = true
         last = { x: r.x, y: r.y, w: r.width, h: r.height }
-        void window.api.panes.add(fullId, startUrlRef.current, r.x, r.y, r.width, r.height).then(() => {
+        void window.api.panes.add(fullId, startUrlRef.current, ws, r.x, r.y, r.width, r.height).then(() => {
           // Po dodaniu dosynchronizuj (pozycja/widoczność mogły się zmienić w międzyczasie).
           if (dead) window.api.panes.close(fullId) // odmontowano w trakcie dodawania
           else sync()
@@ -129,9 +132,9 @@ function NativeBrowserView({
       window.removeEventListener('resize', sync)
       window.api.panes.close(fullId)
     }
-  }, [fullId])
+  }, [fullId, ws])
 
-  // Przełączenie karty / workspace — odśwież widoczność natywnego widoku.
+  // Przełączenie karty / workspace / otwarcie overlaya — odśwież widoczność natywnego widoku.
   useEffect(() => {
     const r = ref.current?.getBoundingClientRect()
     const ok = !!r && r.width > 0 && r.height > 0
@@ -159,6 +162,7 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
   const tabsRef = useRef(tabs)
   const activeRef = useRef(activeTabId)
   const lastActiveRef = useRef<Record<string, number>>({}) // ts ostatniego użycia karty
+  const playingRef = useRef<Record<string, boolean>>({}) // czy w karcie gra film/audio
   tabsRef.current = tabs
   activeRef.current = activeTabId
 
@@ -186,6 +190,12 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
     return s.current
   })
   const wsVisible = useStore((s) => s.current === wsId)
+  // Overlay interfejsu (ustawienia, notatki, find…) leży POD natywnym webview, więc na
+  // czas jego trwania chowamy strony. To samo przy zoomie: panel rozciągnięty na siatkę
+  // leżałby pod natywnymi widokami paneli zostawionych pod spodem.
+  const overlay = useStore(uiOverlayOpen)
+  const coveredByZoom = useStore((s) => s.zoomPaneId !== null && s.zoomPaneId !== paneId)
+  const paneVisible = wsVisible && !overlay && !coveredByZoom
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
@@ -231,6 +241,13 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
         setPaneUrl(paneId, navUrl)
       }
     })
+    // Odtwarzanie mediów w karcie (skrypt wstrzyknięty do strony) — trzyma ją obudzoną.
+    const offMedia = window.api.panes.onMedia(({ id, on }) => {
+      if (!id.startsWith(prefix)) return
+      const tabId = id.slice(prefix.length)
+      playingRef.current[tabId] = on
+      if (on) lastActiveRef.current[tabId] = Date.now()
+    })
     const offTitle = window.api.panes.onTitle(({ id, title }) => {
       if (!id.startsWith(prefix)) return
       const tabId = id.slice(prefix.length)
@@ -239,6 +256,7 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
     return () => {
       offNav()
       offTitle()
+      offMedia()
     }
   }, [paneId, setPaneUrl])
 
@@ -263,7 +281,8 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
       setTabs((prev) => {
         let changed = false
         const next = prev.map((t) => {
-          const inUse = isActivePane && t.id === activeRef.current
+          // Grająca karta liczy się jak używana (port media-started-playing z Electrona).
+          const inUse = (isActivePane && t.id === activeRef.current) || playingRef.current[t.id]
           if (inUse || t.asleep) return t
           const la = lastActiveRef.current[t.id]
           if (la === undefined) {
@@ -274,6 +293,7 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
             changed = true
             // Po obudzeniu natywna historia zaczyna się od zera (świeży webview).
             histRef.current[t.id] = { stack: [t.url], idx: 0 }
+            playingRef.current[t.id] = false
             return { ...t, asleep: true, canBack: false, canFwd: false }
           }
           return t
@@ -327,6 +347,7 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
     // Odmontowanie NativeBrowserView zamknie natywny widok; sprzątamy jego ślady w refach.
     delete histRef.current[id]
     delete lastActiveRef.current[id]
+    delete playingRef.current[id]
     if (id === activeRef.current) setActiveTabId(next[Math.min(idx, next.length - 1)].id)
     setTabs(next)
   }, [])
@@ -536,7 +557,8 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
               key={t.id}
               fullId={paneId + ':' + t.id}
               url={t.url}
-              active={t.id === activeTabId && wsVisible}
+              ws={wsId}
+              active={t.id === activeTabId && paneVisible}
             />
           )
         )}

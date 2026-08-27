@@ -28,10 +28,8 @@ type VimMode = 'insert' | 'normal'
  *
  * Vim mode (opcjonalny): Esc przełącza NORMAL<->INSERT (też przewinięcie myszą w górę lub
  * zaznaczenie tekstu => NORMAL). W NORMAL j/k/g/G/Ctrl+u/d przewijają, a litery NIE trafiają do
- * shella. `i`/`a`/`o`/Enter (lub Esc) wraca do INSERT. PRIORYTET: aplikacja łapie klawisze
- * najpierw — vim-mode działa też nad pełnoekranowymi TUI (alt-screen: nvim, htop); do programu
- * trafia tylko to, czego tryb nie przechwycił (w INSERT prawie wszystko). Przy nvim ustaw
- * „double-esc" w opcjach, żeby pierwszy Esc docierał do edytora.
+ * shella. `i`/`a`/`o`/Enter (lub Esc) wraca do INSERT. W pełnoekranowych TUI (alt-screen: vim,
+ * htop) tryb się nie włącza — klawisze lecą prosto do programu.
  */
 export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Element {
   // Kanał PTY: dla zwykłego terminala = paneId; dla agenta osobny klucz (przekazany z AgentPane).
@@ -59,6 +57,9 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
   const winTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const modeRef = useRef<VimMode>('insert')
   const termRef = useRef<Terminal | null>(null)
+  // Stan alternate screen prosto z PTY (nvim/htop). Bufor xterma po replayu bywa niewiarygodny,
+  // a wtedy vim mode zjadałby klawisze programu — dlatego to źródło jest nadrzędne.
+  const altRef = useRef(false)
   // Copy-mode (NORMAL): ruchomy kursor nad buforem xterm + zaznaczanie.
   const copyRef = useRef({
     cy: 0, // wiersz w buforze (absolutny, ze scrollbackiem)
@@ -75,7 +76,10 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
   const setVim = (m: VimMode): void => {
     modeRef.current = m
     setMode(m)
-    termRef.current?.focus()
+    // Fokus przejmujemy tylko w aktywnym panelu. Zdarzenie 'pty:alt' leci do wszystkich paneli,
+    // więc bez tego panel w tle (zostawiony w NORMAL) kradłby klawiaturę, gdy jego program
+    // wchodzi w tryb pełnoekranowy.
+    if (useStore.getState().activePaneId === paneId) termRef.current?.focus()
     if (m === 'insert') {
       termRef.current?.clearSelection()
       copyRef.current.ready = false // przy następnym NORMAL kursor ustawi się od nowa
@@ -109,7 +113,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     term.open(host)
     termRef.current = term
 
-    const isAlt = (): boolean => term.buffer.active.type === 'alternate'
+    const isAlt = (): boolean => altRef.current || term.buffer.active.type === 'alternate'
     const toInsert = (): void => setVim('insert') // setVim sam przewija na dół i ustawia fokus
 
     // --- Copy-mode (kursor po buforze + zaznaczanie) ---
@@ -187,9 +191,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     // Klawiatura w trybie NORMAL: nawigacja zamiast wejścia do PTY.
     term.attachCustomKeyEventHandler((e: KeyboardEvent): boolean => {
       if (e.type !== 'keydown') return true
-      // Brak bramki isAlt(): vim-mode ma priorytet także nad TUI (nvim/htop) — aplikacja
-      // łapie klawisze najpierw, do programu trafia reszta (w INSERT prawie wszystko).
-      if (!vimRef.current) return true
+      if (!vimRef.current || isAlt()) return true
 
       // Wyjście INSERT->NORMAL zależne od ustawienia (konflikt z Esc w Neovim itp.).
       if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -360,6 +362,12 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     const offData = window.api.pty.onData(({ id, data }) => {
       if (id === ptyId) term.write(data)
     })
+    const offAlt = window.api.pty.onAlt(({ id, alt }) => {
+      if (id !== ptyId) return
+      altRef.current = alt
+      // Program pełnoekranowy przejmuje klawiaturę — wychodzimy z NORMAL, by go nie blokować.
+      if (alt && modeRef.current === 'normal') setVim('insert')
+    })
 
     setPanePty(paneId, ptyId)
     window.api.pty.ensure(ptyId, {
@@ -370,6 +378,12 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
         ? { profileId: agent.profileId, toolId: agent.toolId, apiKey: agent.apiKey, ssh: agent.ssh }
         : undefined
     })
+      // Sesja mogła już działać w nvimie (remount). Ustawiamy tylko „włączone" — wyłączenie
+      // przyjdzie zdarzeniem, więc odpowiedź ensure nie nadpisze świeższego stanu.
+      .then((r) => {
+        if (r.alt) altRef.current = true
+      })
+      .catch(() => {})
 
     const onInput = term.onData((data) => {
       window.api.pty.input(ptyId, data)
@@ -394,6 +408,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     return () => {
       // Tylko czyścimy widok — NIE killujemy PTY (może działać w tle).
       offData()
+      offAlt()
       onInput.dispose()
       onSel.dispose()
       host.removeEventListener('wheel', onWheel)

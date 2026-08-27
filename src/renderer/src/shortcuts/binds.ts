@@ -17,6 +17,8 @@ export const BIND_ACTIONS: BindAction[] = [
   { id: 'pane.mru', label: 'Switch panes (tap = last used, hold = cycle)', group: 'Panes' },
   { id: 'pane.next', label: 'Next pane (by index)', group: 'Panes' },
   { id: 'pane.prev', label: 'Previous pane (by index)', group: 'Panes' },
+  { id: 'pane.zoom', label: 'Fullscreen active pane (inside the app)', group: 'Panes' },
+  { id: 'pane.zoomExit', label: 'Exit pane fullscreen', group: 'Panes' },
   { id: 'mode.terminal', label: 'Active pane → Terminal', group: 'Pane mode' },
   { id: 'mode.browser', label: 'Active pane → Browser', group: 'Pane mode' },
   { id: 'mode.viewer', label: 'Active pane → Viewer', group: 'Pane mode' },
@@ -65,6 +67,8 @@ export const DEFAULT_BINDS: Record<string, string> = {
   'pane.mru': 'Control+Tab',
   'pane.next': '',
   'pane.prev': '',
+  'pane.zoom': '', // celowo bez domyślnego klawisza — użytkownik przypisuje sam
+  'pane.zoomExit': '',
   'mode.terminal': '',
   'mode.browser': '',
   'mode.viewer': '',

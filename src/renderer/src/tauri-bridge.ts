@@ -11,6 +11,7 @@ import type {
   PtyEnsureOpts,
   PtyDataEvent,
   PtyExitEvent,
+  PtyAltEvent,
   LoadedFile,
   NoteFile,
   RamStats,
@@ -23,8 +24,11 @@ import type {
 // Fan-out subscriber sets (avoid MaxListeners-style duplication across up to 16 panes).
 const dataCbs = new Set<(e: PtyDataEvent) => void>()
 const exitCbs = new Set<(e: PtyExitEvent) => void>()
+// Wejście/wyjście programu pełnoekranowego (nvim/htop) — vim mode ma wtedy odpuścić klawisze.
+const altCbs = new Set<(e: PtyAltEvent) => void>()
 const ramCbs = new Set<(s: RamStats) => void>()
 const sshProgCbs = new Set<(e: { profileId: string; stage: string }) => void>()
+const paneMediaCbs = new Set<(e: { id: string; on: boolean }) => void>()
 // Native browser-pane events (multiwebview). id = full native id `${paneId}:${tabId}`.
 const paneNavCbs = new Set<(e: { id: string; url: string }) => void>()
 const paneTitleCbs = new Set<(e: { id: string; title: string }) => void>()
@@ -52,11 +56,11 @@ void listen<[string, string]>('pty:data', (e) => {
   const data = dec.decode(b64ToBytes(b64), { stream: true })
   if (data) dataCbs.forEach((cb) => cb({ id, data }))
 })
-void listen<string>('pty:exit', (e) => {
-  const id = e.payload
-  decoders.delete(id)
-  exitCbs.forEach((cb) => cb({ id, exitCode: 0 }))
+void listen<PtyExitEvent>('pty:exit', (e) => {
+  decoders.delete(e.payload.id)
+  exitCbs.forEach((cb) => cb(e.payload))
 })
+void listen<PtyAltEvent>('pty:alt', (e) => altCbs.forEach((cb) => cb(e.payload)))
 void listen<RamStats>('ram:stats', (e) => ramCbs.forEach((cb) => cb(e.payload)))
 void listen<{ profileId: string; stage: string }>('agent:sshProgress', (e) =>
   sshProgCbs.forEach((cb) => cb(e.payload))
@@ -68,6 +72,9 @@ void listen<{ id: string; title: string }>('pane:title', (e) =>
   paneTitleCbs.forEach((cb) => cb(e.payload))
 )
 // Zdarzenia ze skryptu wstrzykiwanego do natywnych webview (port preloadu webview z master).
+void listen<{ id: string; on: boolean }>('pane:media', (e) =>
+  paneMediaCbs.forEach((cb) => cb(e.payload))
+)
 void listen<{ id: string; url: string }>('pane:open-tab', (e) =>
   paneOpenTabCbs.forEach((cb) => cb(e.payload))
 )
@@ -88,18 +95,17 @@ void listen<{ id: string }>('pane:vim-hello', (e) =>
 
 const api = {
   pty: {
-    ensure: async (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean }> => {
-      // pty_spawn returns `existed`; on re-attach the backend replays its scrollback
-      // ring as a normal pty:data event (we subscribed at module load, so nothing is lost).
-      const existed = await invoke<boolean>('pty_spawn', {
+    // Zwraca `{ existed, alt }` — `alt` mówi, czy w żywej sesji chodzi program
+    // pełnoekranowy. Przy re-attachu backend odtwarza scrollback zwykłym zdarzeniem
+    // pty:data (nasłuch stoi od załadowania modułu, więc nic nie ginie).
+    ensure: (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean; alt: boolean }> =>
+      invoke('pty_spawn', {
         id,
         cols: opts.cols,
         rows: opts.rows,
         cwd: opts.cwd ?? null,
         agent: opts.agent ?? null
-      })
-      return { existed }
-    },
+      }),
     input: (id: string, data: string): void => {
       void invoke('pty_write', { id, data })
     },
@@ -116,6 +122,10 @@ const api = {
     onExit: (cb: (e: PtyExitEvent) => void): (() => void) => {
       exitCbs.add(cb)
       return () => void exitCbs.delete(cb)
+    },
+    onAlt: (cb: (e: PtyAltEvent) => void): (() => void) => {
+      altCbs.add(cb)
+      return () => void altCbs.delete(cb)
     }
   },
   store: {
@@ -185,8 +195,10 @@ const api = {
   // Fire-and-forget wrappers swallow "no such pane" races (view closed mid-call); add/move
   // stay awaitable so callers can sequence follow-up moves/visibility after creation.
   panes: {
-    add: (id: string, url: string, x: number, y: number, w: number, h: number): Promise<void> =>
-      invoke<void>('add_pane', { id, url, x, y, w, h }).catch(() => {}),
+    // `ws` = numer przestrzeni roboczej: panele w tej samej przestrzeni dzielą
+    // cookies/logowania, różne przestrzenie mają osobne (partycje persist: z Electrona).
+    add: (id: string, url: string, ws: number, x: number, y: number, w: number, h: number): Promise<void> =>
+      invoke<void>('add_pane', { id, url, ws, x, y, w, h }).catch(() => {}),
     move: (id: string, x: number, y: number, w: number, h: number): Promise<void> =>
       invoke<void>('move_pane', { id, x, y, w, h }).catch(() => {}),
     close: (id: string): void => {
@@ -239,6 +251,11 @@ const api = {
     onVimHello: (cb: (e: { id: string }) => void): (() => void) => {
       paneVimHelloCbs.add(cb)
       return () => void paneVimHelloCbs.delete(cb)
+    },
+    // Karta, w której gra film/audio, nie może zostać uśpiona przez eco mode.
+    onMedia: (cb: (e: { id: string; on: boolean }) => void): (() => void) => {
+      paneMediaCbs.add(cb)
+      return () => void paneMediaCbs.delete(cb)
     }
   }
 }

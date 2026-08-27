@@ -16,6 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# build.rs generuje rustowy rejestr agentów z src/shared/agents.json (jedno źródło prawdy).
+serde_json = "1"
 
 [dependencies]
 # `unstable` enables the multiwebview API (Window::add_child / multiple webviews per window) —
