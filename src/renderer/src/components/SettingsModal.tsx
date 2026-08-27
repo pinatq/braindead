@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { useStore } from '../state/store'
 import {
   BIND_ACTIONS,
@@ -70,6 +70,20 @@ function BindRow({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// Separator w grupie klawiszy — wizualnie słabszy niż same klawisze.
+const Sep = (): JSX.Element => <span className="sep">/</span>
+
+// Jeden wiersz ściągawki vima: klawisze w kolumnie o stałej szerokości + opis obok.
+// Stała kolumna to cały trick „wypoziomowania" — opisy w obrębie karty startują równo.
+function VimHelpRow({ keys, children }: { keys: ReactNode; children: ReactNode }): JSX.Element {
+  return (
+    <div className="vk">
+      <span className="vk-keys">{keys}</span>
+      <span className="vk-desc">{children}</span>
     </div>
   )
 }
@@ -592,50 +606,76 @@ export default function SettingsModal(): JSX.Element | null {
               </p>
               <div className="vim-help">
                 <div className="vim-help-col">
-                  <h4>Terminal (copy-mode)</h4>
-                  <p>Esc → <b>NORMAL</b>: a cursor you move like vim.</p>
-                  <ul>
-                    <li><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> move · <kbd>w</kbd>/<kbd>b</kbd>/<kbd>e</kbd> word · <kbd>0</kbd>/<kbd>$</kbd> line</li>
-                    <li><kbd>gg</kbd>/<kbd>G</kbd> ends · <kbd>Ctrl+d</kbd>/<kbd>u</kbd> half page</li>
-                    <li><kbd>v</kbd>/<kbd>V</kbd> select · <kbd>y</kbd> copy · <kbd>i</kbd> → <b>INSERT</b></li>
-                  </ul>
-                  <p className="setting-sub">Typing is blocked in NORMAL — protects the shell.</p>
+                  <h4>Terminal — copy-mode</h4>
+                  <VimHelpRow keys={<><kbd>Esc</kbd></>}>
+                    enter <b>NORMAL</b> — a cursor you move like vim
+                  </VimHelpRow>
+                  <VimHelpRow keys={<><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></>}>move</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>w</kbd><Sep /><kbd>b</kbd><Sep /><kbd>e</kbd></>}>by word</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>0</kbd><Sep /><kbd>$</kbd></>}>line start / end</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>gg</kbd><Sep /><kbd>G</kbd></>}>top / bottom</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>Ctrl+d</kbd><Sep /><kbd>u</kbd></>}>half page</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>v</kbd><Sep /><kbd>V</kbd></>}>select / select line</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>y</kbd></>}>copy</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>i</kbd></>}>back to <b>INSERT</b></VimHelpRow>
+                  <span className="setting-sub">Typing is blocked in NORMAL — protects the shell.</span>
                 </div>
+
                 <div className="vim-help-col">
                   <h4>Browser</h4>
-                  <ul>
-                    <li><kbd>:</kbd> address bar · <kbd>f</kbd> link hints</li>
-                    <li><kbd>H</kbd>/<kbd>L</kbd> back/forward · <kbd>gg</kbd>/<kbd>G</kbd> top/bottom</li>
-                    <li><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> scroll · <kbd>d</kbd>/<kbd>u</kbd> half page</li>
-                    <li><kbd>i</kbd> next field · <kbd>Esc</kbd> leave field</li>
-                  </ul>
+                  <VimHelpRow keys={<><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></>}>scroll</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>d</kbd><Sep /><kbd>u</kbd></>}>half page</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>gg</kbd><Sep /><kbd>G</kbd></>}>top / bottom</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>f</kbd></>}>link hints</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>H</kbd><Sep /><kbd>L</kbd></>}>back / forward</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>i</kbd></>}>next input field</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>Esc</kbd></>}>leave the field</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>:</kbd></>}>address bar</VimHelpRow>
                 </div>
+
                 <div className="vim-help-col">
-                  <h4>Windows (<kbd>Ctrl+w</kbd>)</h4>
-                  <ul>
-                    <li><kbd>Ctrl+w</kbd> then <kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> — focus pane by direction</li>
-                    <li><kbd>w</kbd>/<kbd>W</kbd> cycle · <kbd>q</kbd> kill pane</li>
-                    <li><kbd>s</kbd>/<kbd>v</kbd> split · <kbd>o</kbd> single</li>
-                  </ul>
-                  <p className="setting-sub">Works in terminal, browser and viewer panes.</p>
+                  <h4>Windows — prefix <kbd>Ctrl+w</kbd></h4>
+                  <VimHelpRow keys={<><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></>}>focus pane by direction</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>w</kbd><Sep /><kbd>W</kbd></>}>cycle next / previous</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>s</kbd><Sep /><kbd>v</kbd></>}>split down / right</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>o</kbd></>}>single pane</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>q</kbd></>}>kill pane</VimHelpRow>
+                  <span className="setting-sub">
+                    Press <kbd>Ctrl+w</kbd> first, then the key. Works in terminal, browser and viewer panes.
+                  </span>
                 </div>
+
                 <div className="vim-help-col">
                   <h4>Viewer</h4>
-                  <ul>
-                    <li><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> scroll · <kbd>d</kbd>/<kbd>u</kbd> half · <kbd>gg</kbd>/<kbd>G</kbd> ends</li>
-                    <li><kbd>+</kbd>/<kbd>-</kbd>/<kbd>0</kbd> zoom (image · PDF · docx)</li>
-                    <li><kbd>v</kbd> copy-mode: caret on, <kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> moves · <kbd>v</kbd> again selects · <kbd>y</kbd> yank · <kbd>Esc</kbd> exit</li>
-                  </ul>
-                  <p className="setting-sub">PDF renders via pdf.js (real, selectable text). Mouse still works everywhere.</p>
+                  <VimHelpRow keys={<><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></>}>scroll</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>d</kbd><Sep /><kbd>u</kbd></>}>half page</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>gg</kbd><Sep /><kbd>G</kbd></>}>top / bottom</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>+</kbd><Sep /><kbd>-</kbd><Sep /><kbd>0</kbd></>}>
+                    zoom in / out / reset
+                  </VimHelpRow>
+                  <VimHelpRow keys={<><kbd>v</kbd></>}>copy-mode: caret on</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>v</kbd></>}>again — start selecting</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>y</kbd></>}>yank the selection</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>Esc</kbd></>}>exit copy-mode</VimHelpRow>
+                  <span className="setting-sub">
+                    Zoom covers images, PDF and .docx. PDF renders via pdf.js, so the text is real and
+                    selectable. The mouse still works everywhere.
+                  </span>
                 </div>
+
                 <div className="vim-help-col">
                   <h4>Explorer</h4>
-                  <ul>
-                    <li><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>l</kbd>/<kbd>Enter</kbd> open · <kbd>h</kbd> parent · <kbd>gg</kbd>/<kbd>G</kbd> ends</li>
-                    <li><kbd>N</kbd>/<kbd>F</kbd> new folder/file · <kbd>D</kbd> delete · right-click = menu</li>
-                    <li><strong>SSH</strong> button → browse &amp; edit remote files over SFTP</li>
-                  </ul>
-                  <p className="setting-sub">Arrows, double-click &amp; Shortcuts tab work too.</p>
+                  <VimHelpRow keys={<><kbd>j</kbd><Sep /><kbd>k</kbd></>}>move</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>l</kbd><Sep /><kbd>Enter</kbd></>}>open</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>h</kbd></>}>parent folder</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>gg</kbd><Sep /><kbd>G</kbd></>}>top / bottom</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>N</kbd><Sep /><kbd>F</kbd></>}>new folder / file</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>D</kbd></>}>delete (asks first)</VimHelpRow>
+                  <VimHelpRow keys={<><kbd>:</kbd></>}>jump to a path</VimHelpRow>
+                  <span className="setting-sub">
+                    The <b>SSH</b> button browses and edits remote files over SFTP. Arrows, double-click,
+                    right-click menu and the Shortcuts tab work too.
+                  </span>
                 </div>
               </div>
               <div className="bind-toolbar" style={{ marginTop: 12 }}>

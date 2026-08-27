@@ -1258,11 +1258,15 @@ button:disabled {
 }
 
 .modal {
-  width: 680px;
+  width: 720px;
   max-width: calc(100vw - 40px);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 80px);
+  /* Wysokość ZABLOKOWANA, nie `max-height`. Wcześniej okno rosło i kurczyło się przy
+     każdej zmianie zakładki (Shortcuts jest długi, RAM krótki), a że overlay centruje
+     je w pionie — całe okno skakało po ekranie. Teraz rozmiar i pozycja stoją,
+     przewija się wyłącznie .modal-body. */
+  height: min(760px, calc(100vh - 80px));
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1280,6 +1284,8 @@ button:disabled {
 }
 
 .modal-body {
+  flex: 1;
+  min-height: 0; /* bez tego flex-dziecko nie kurczy się i scroll ląduje na całym oknie */
   padding: 14px;
   overflow-y: auto;
 }
@@ -1508,40 +1514,86 @@ button:disabled {
   margin-top: 2px;
 }
 
+/* Ściągawka vima. Wcześniej było to pięć kolumn `flex: 1` w oknie szerokim na 680 px,
+   czyli ~120 px na kolumnę: listy łamały się w przypadkowych miejscach, a kolumny miały
+   różne wysokości. Teraz siatka kart — dwie na wiersz, każda karta w wierszu tej samej
+   wysokości, a w środku pary klawisze|opis wyrównane do wspólnej kolumny. */
 .vim-help {
-  display: flex;
-  gap: 16px;
-  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
 .vim-help-col {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  padding: 11px 13px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .vim-help-col h4 {
-  margin: 0 0 6px;
-  font-size: 12px;
+  margin: 0 0 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--fg-dim);
 }
 
-.vim-help-col p {
-  margin: 4px 0;
-  font-size: 12px;
+/* Klawisz w nagłówku (np. „Windows — prefix Ctrl+w") nie może dziedziczyć wersalików. */
+.vim-help-col h4 kbd {
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 2px;
 }
 
-.vim-help-col ul {
-  margin: 4px 0;
-  padding-left: 16px;
+/* Wiersz ściągawki. Stała szerokość kolumny klawiszy jest tym, co „poziomuje" —
+   wszystkie opisy w karcie zaczynają się dokładnie w tym samym miejscu. */
+.vk {
+  display: grid;
+  grid-template-columns: 106px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 2.5px 0;
   font-size: 12px;
+  line-height: 1.5;
 }
 
-.vim-help-col li {
-  margin: 3px 0;
+.vk-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+}
+
+/* Jednoznakowe klawisze mają wspólną szerokość, żeby h j k l stało w równym rzędzie. */
+.vk-keys kbd {
+  min-width: 17px;
+  text-align: center;
+}
+
+.vk-keys .sep {
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.vk-desc {
+  min-width: 0;
+  color: var(--fg);
+}
+
+/* Notka dosunięta do dołu karty — dzięki temu karty w jednym wierszu kończą się równo. */
+.vim-help-col .setting-sub {
+  margin-top: auto;
+  padding-top: 9px;
+  line-height: 1.45;
 }
 
 kbd {
