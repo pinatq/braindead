@@ -7,8 +7,8 @@ Kimi Code, Goose, opencode, Amazon Q). It is keyboard-centric — with an option
 and ships with numbered workspaces, notes, global find (⌘F), an "Autopilot", and a RAM monitor with an
 eco mode.
 
-Built on **Electron 31 + React 18 + TypeScript + zustand** (terminals: node-pty + xterm.js; browser:
-`<webview>`; PDF: pdf.js).
+Built on **Tauri 2 + Rust + React 19 + TypeScript + zustand** (terminals: native Rust PTY +
+xterm.js; browser: the system's native webview; PDF: pdf.js).
 
 > Status: **alpha** — the core is solid; polish is ongoing.
 
@@ -110,19 +110,16 @@ of that is stored inside the app bundle.
 
 ## Run from source
 
-Requirements: **Node.js 18+** and npm; macOS / Windows / Linux.
+Requirements: **Node.js 18+**, **Rust** (stable, via [rustup](https://rustup.rs)); macOS / Windows / Linux.
+On Linux also: `libwebkit2gtk-4.1-dev`, `librsvg2-dev`, `patchelf`, `libssl-dev`, `pkg-config`.
 
 ```bash
-npm install        # deps + node-pty rebuild + spawn-helper permission fix (postinstall)
-npm run dev        # development mode with hot reload
-npm run build      # production bundles into out/
-npm run package    # build an installer (dmg / nsis / AppImage / deb / rpm / pacman) into release/
+npm install              # frontend deps (no native rebuild — the PTY is Rust)
+npm run tauri dev        # development mode with hot reload
+npm run tauri build      # installer (dmg / nsis / AppImage / deb / rpm) into src-tauri/target/release/bundle/
 ```
 
-If `node-pty` reports `posix_spawnp failed` (happens with Electron on macOS):
-```bash
-node scripts/fix-pty-perms.cjs
-```
+The first Rust build takes a few minutes (release uses fat LTO); later ones are incremental.
 
 ---
 
@@ -169,7 +166,7 @@ the pane:
   On an unnamed pane the chip is invisible until you hover the pane.
 
 ### 1. Terminal (`>_`)
-- A real system terminal (node-pty + xterm.js), your default shell.
+- A real system terminal (native Rust PTY + xterm.js), your default shell.
 - Full scrollback kept in memory (up to ~200 kB per session — part of eco mode).
 - In vim mode it offers a **copy-mode** (see [Vim mode](#vim-mode)): a movable cursor, selection and yank
   just like neovim.
@@ -451,19 +448,28 @@ Any tab can be opened contextually (e.g. the agent pane's "Manage accounts" link
 ## Data & privacy
 
 No user data is kept in the repository. Everything lands in the OS application-data folder
-(`app.getPath('userData')`):
+(macOS: `~/Library/Application Support/com.vibecoder.app`, Linux: `~/.config/com.vibecoder.app`,
+Windows: `%APPDATA%\com.vibecoder.app`):
 
 - **`state.json`** — notes, layouts, workspaces, browser addresses, shortcuts and the vim keymap,
   RAM/Autopilot settings, saved SSH connections (name + command + optional password), agent profiles
   (including API keys);
 - **notes attachments** (file copies);
 - **`claude/<id>` and `agents/<id>`** — isolated configs/tokens of agent accounts;
-- **per-workspace browser partitions `persist:browser-ws<N>`** — cookies, cache, history of the embedded
-  browser, separate for each workspace.
+- **per-workspace browser data stores** — cookies, cache and history of the embedded browser,
+  separate for each workspace (the equivalent of the Electron build's `persist:browser-ws<N>` partitions).
 
-So packaging the repo never leaks notes, files, tokens or browsing history. The repo only contains code
-and the icon assets `build/icon-source.png` (source artwork) plus `build/icon.png` (the generated logo,
-reproducible with `python3 scripts/make-icon.py`). Irreversible actions (killing a pane/workspace, deleting files, uploading
+**Coming from the Electron build.** On first launch the app makes a one-time copy of `state.json`,
+the notes attachments and the `claude/` and `agents/` folders from the old location (`…/vibe-coder`) —
+only when nothing exists on the new side, so it can never overwrite fresher data. Browser cookies do
+not carry over (Chromium format ≠ WebKit); you have to sign in again inside the panes.
+
+**Pages in browser panes cannot reach the app.** Tauri permissions are attached to the UI webview
+alone (`capabilities/ui.json` uses the `webviews` key, not `windows`), and internal events — terminal
+output included — are addressed to it rather than broadcast. A capability scoped to the whole window
+would let any visited page listen to `pty:data`.
+
+So packaging the repo never leaks notes, files, tokens or browsing history. Irreversible actions (killing a pane/workspace, deleting files, uploading
 a token to a remote host) are **always behind a confirmation**.
 
 ---
@@ -471,19 +477,21 @@ a token to a remote host) are **always behind a confirmation**.
 ## Code architecture (data sheet)
 
 ```
+src-tauri/       main process (Rust)
+  src/lib.rs       window, menu, browser panes (native webviews), persistence, theme,
+                   migration of state from an older Electron install
+  src/pty.rs       PtyManager — native PTY, condvar-driven output coalescing, scrollback,
+                   alternate-screen tracking (`pty:alt` — what keeps vim mode off nvim's back),
+                   agent sessions (local + SSH)
+  src/files.rs     file operations, native dialogs (rfd), natural sort
+  src/ssh.rs       parse the ssh command (host/user/port/key, ~/.ssh/config), SFTP
+  src/agents.rs    agent CLI status/install; agent_ssh_sync (config copy + remote install)
+  src/ram.rs       memory monitor (sysinfo)
+  src/browser_script.rs  script injected into pages (vim, link hints, scroll, run-bind, media)
+  build.rs         generates the Rust agent registry from src/shared/agents.json
+  capabilities/ui.json   permissions for the UI webview ONLY (see Data & privacy)
 src/
-  main/        main process (Node/Electron)
-    index.ts       window, IPC handler registration
-    pty.ts         PtyManager — PTY processes (node-pty), history buffer, per-session alternate-screen
-                   tracking (`pty:alt` — what keeps vim mode off nvim's back), agent sessions (local + SSH)
-    files.ts       file operations, dialogs (open file / open dir), saves
-    ssh.ts         parse the ssh command (host/user/port/key, ~/.ssh/config), SFTP
-    agents.ts      agent CLI status/install; agentSshSync (config copy + remote install)
-    store.ts       state persistence (state.json) + defaults
-    dialog.ts      native dialogs
-  preload/
-    index.ts       safe IPC bridge → window.api (the Api type)
-    webview.ts     preload for the embedded browser (vim, link hints, scroll, run-bind)
+  renderer/src/tauri-bridge.ts   invoke/listen bridge → window.api (same shape as the Electron preload)
   renderer/        React UI
     App.tsx, main.tsx
     components/    PaneGrid, TerminalPane, BrowserPane, ViewerPane (+PdfView), ExplorerPane,
@@ -495,20 +503,15 @@ src/
     layouts/presets.ts  layout presets 1–16
     lib/           domFind.ts (Highlight API), pdfPolyfill.ts
     styles/theme.css
-  shared/        shared by main/preload/renderer
-    types.ts       types + IPC channel names (the IPC object)
-    agents.ts      AI tool registry (AGENT_TOOLS)
+  shared/        shared by Rust and the renderer
+    types.ts       types + event/command names (the IPC object)
+    agents.json    THE single source for the AI tool registry (read by TS and by build.rs)
     vimKeys.ts     vim action defs + matchVimKey/captureVimKey
-scripts/
-  fix-pty-perms.cjs   node-pty spawn-helper permission fix
-  smoke.cjs           smoke test (handle/listener counters)
-  alt-check.js        self-check of the alternate-screen tracking (mirrors main/pty.ts)
-  make-icon.py        build/icon-source.png → build/icon.png (macOS squircle)
-  stamp-downloaded.py sets the macOS "downloaded date" on the app / installers
-build/
-  icon-source.png     source artwork for the icon
-  icon.png            generated app icon (squircle, 1024 px)
 ```
+
+Self-checks live next to the code they guard: `cargo test` runs the alternate-screen tracking
+assertions (`src/pty.rs`) and the natural-sort assertions (`src/files.rs`).
+
 
 Renderer ↔ main talk only over **IPC** (channels collected in `IPC` in
 [types.ts](src/shared/types.ts)) and the safe `window.api` bridge from preload. zustand holds the UI state
@@ -520,20 +523,16 @@ and persists it to `state.json` with debounce.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | development mode (electron-vite, hot reload) |
-| `npm run build` | production bundles into `out/` |
-| `npm run package` | `build` + electron-builder → installer in `release/` |
-| `npm run preview` / `start` | preview the built app |
-| `npm run rebuild` | rebuild native `node-pty` |
-| `node scripts/fix-pty-perms.cjs` | spawn-helper permission fix (on `posix_spawnp failed`) |
-| `node scripts/smoke.cjs` | main-process smoke test |
-| `node scripts/alt-check.js` | self-check of the alternate-screen logic vim mode rides on (asserts, prints `alt-check OK`) |
-| `python3 scripts/make-icon.py` | regenerates `build/icon.png` from `build/icon-source.png` (1024 px canvas, 824 px body); needs Pillow |
-| `python3 scripts/stamp-downloaded.py <path…>` | stamps the macOS "downloaded date" (`kMDItemDownloadedDate`) on the app/installers; macOS only |
+| `npm run tauri dev` | development mode (Vite + Rust, hot reload) |
+| `npm run build` | frontend bundle into `dist/` (`tsc` + Vite) |
+| `npm run tauri build` | full installer into `src-tauri/target/release/bundle/` |
+| `npx tsc --noEmit` | type-check the frontend |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | self-checks: alternate-screen tracking (what vim mode rides on) and natural sort |
+| `npx tauri icon <png>` | regenerates every icon size from one source PNG |
 
-`npm run package` builds for the current OS by default. To cross-build: `electron-builder --win`
-(needs wine on macOS/Linux) and `electron-builder --linux` (needs Docker on macOS, or run on Linux).
-Targets are configured in [electron-builder.yml](electron-builder.yml).
+Tauri cannot cross-compile the webview, so each OS builds on its own machine —
+[.github/workflows/release.yml](.github/workflows/release.yml) does exactly that on a tag push.
+Targets are configured in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json).
 
 ---
 

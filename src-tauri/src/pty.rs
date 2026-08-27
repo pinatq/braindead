@@ -400,3 +400,69 @@ fn remote_cd(cwd: Option<&str>) -> String {
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{alt_from_chunk, SEQ_TAIL};
+
+    /// Symuluje wątek czytający: karmi kolejnymi porcjami i notuje ZMIANY stanu alt-screena
+    /// (tylko one lecą jako pty:alt). Port scripts/alt-check.js z wersji Electronowej.
+    fn odtworz(porcje: &[&[u8]]) -> (bool, Vec<bool>) {
+        let (mut alt, mut zdarzenia) = (false, Vec::new());
+        let mut tail: Vec<u8> = Vec::new();
+        for porcja in porcje {
+            tail.extend_from_slice(porcja);
+            if let Some(on) = alt_from_chunk(&tail) {
+                if on != alt {
+                    alt = on;
+                    zdarzenia.push(on);
+                }
+            }
+            if tail.len() > SEQ_TAIL {
+                let nadmiar = tail.len() - SEQ_TAIL;
+                tail.drain(..nadmiar);
+            }
+        }
+        (alt, zdarzenia)
+    }
+
+    #[test]
+    fn nvim_wchodzi_i_wychodzi() {
+        let (alt, ev) = odtworz(&[b"prompt$ nvim\r\n\x1b[?1049h\x1b[2Jrysowanie"]);
+        assert!(alt, "po ?1049h ma byc alt");
+        assert_eq!(ev, vec![true], "dokladnie jedno zdarzenie");
+
+        let (alt, ev) = odtworz(&[b"\x1b[?1049h tresc", b"\x1b[?1049l prompt$ "]);
+        assert!(!alt, "po ?1049l wracamy do zwyklego ekranu");
+        assert_eq!(ev, vec![true, false]);
+    }
+
+    #[test]
+    fn liczy_sie_ostatnia_sekwencja_w_porcji() {
+        // htop wchodzi i od razu wychodzi w jednym odczycie — stan koncowy to wyjscie.
+        let (alt, ev) = odtworz(&[b"\x1b[?1049h ...\x1b[?1049l"]);
+        assert!(!alt);
+        assert_eq!(ev, Vec::<bool>::new(), "brak zmiany netto = brak zdarzenia");
+    }
+
+    #[test]
+    fn sekwencja_rozcieta_miedzy_odczytami() {
+        // To jest powod, dla ktorego trzymamy ogon SEQ_TAIL bajtow.
+        let (alt, ev) = odtworz(&[b"jakis tekst\x1b[?10", b"49h reszta"]);
+        assert!(alt, "sekwencja rozcieta na dwa odczyty tez musi zostac zlapana");
+        assert_eq!(ev, vec![true]);
+    }
+
+    #[test]
+    fn starsze_warianty_1047_i_47() {
+        assert_eq!(alt_from_chunk(b"\x1b[?1047h"), Some(true));
+        assert_eq!(alt_from_chunk(b"\x1b[?47l"), Some(false));
+        assert_eq!(alt_from_chunk(b"zwykle wyjscie bez sekwencji"), None);
+    }
+
+    #[test]
+    fn nie_myli_sie_z_innymi_sekwencjami() {
+        // ?25h = pokaz kursor, ?2004h = bracketed paste — nie maja nic wspolnego z alt-screenem.
+        assert_eq!(alt_from_chunk(b"\x1b[?25h\x1b[?2004h"), None);
+    }
+}

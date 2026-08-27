@@ -1,9 +1,10 @@
 /* Spakowany Nerd Font — tylko glify ikon (devicons itp.). Używany jako FALLBACK
    po Menlo w terminalu, dzięki czemu LazyVim/Starship mają ikony bez instalacji
-   czcionki w systemie. Vite zhashuje plik i poda go jako 'self' (zgodne z CSP). */
+   czcionki w systemie. Vite zhashuje plik i poda go jako 'self' (zgodne z CSP).
+   WOFF2 zamiast TTF: ten sam komplet glifów, 957 kB zamiast 2096 kB. */
 @font-face {
   font-family: 'Symbols Nerd Font Mono';
-  src: url('../assets/fonts/SymbolsNerdFontMono-Regular.ttf') format('truetype');
+  src: url('../assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
   font-display: block;
 }
 

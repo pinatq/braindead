@@ -9,8 +9,8 @@ Aider, Kimi Code, Goose, opencode, Amazon Q). Całość jest klawiaturocentryczn
 remapowalnym **trybem vim** — i ma numerowane przestrzenie robocze, notatki, globalne wyszukiwanie
 (⌘F), „Autopilota" oraz monitor RAM z trybem oszczędnym.
 
-Zbudowane na **Electron 31 + React 18 + TypeScript + zustand** (terminale: node-pty + xterm.js,
-przeglądarka: `<webview>`, PDF: pdf.js).
+Zbudowane na **Tauri 2 + Rust + React 19 + TypeScript + zustand** (terminale: natywne PTY
+w Ruście + xterm.js, przeglądarka: natywne webview systemu, PDF: pdf.js).
 
 > Status: **alpha** — rdzeń działa, dochodzą szlify.
 
@@ -112,19 +112,16 @@ tego nie jest trzymane wewnątrz aplikacji.
 
 ## Uruchomienie ze źródeł
 
-Wymagania: **Node.js 18+** i npm; macOS / Windows / Linux.
+Wymagania: **Node.js 18+**, **Rust** (stable, przez [rustup](https://rustup.rs)); macOS / Windows / Linux.
+Na Linuksie dodatkowo: `libwebkit2gtk-4.1-dev`, `librsvg2-dev`, `patchelf`, `libssl-dev`, `pkg-config`.
 
 ```bash
-npm install        # zależności + rebuild node-pty + naprawa uprawnień spawn-helper (postinstall)
-npm run dev        # tryb deweloperski z hot-reloadem
-npm run build      # bundle produkcyjne do out/
-npm run package    # instalka (dmg / nsis / AppImage / deb / rpm / pacman) do release/
+npm install              # zależności frontendu (bez rebuildów natywnych — PTY jest w Ruście)
+npm run tauri dev        # tryb deweloperski z hot-reloadem
+npm run tauri build      # instalka (dmg / nsis / AppImage / deb / rpm) do src-tauri/target/release/bundle/
 ```
 
-Jeśli `node-pty` zgłosi `posix_spawnp failed` (zdarza się w Electronie na macOS):
-```bash
-node scripts/fix-pty-perms.cjs
-```
+Pierwszy build Rusta trwa kilka minut (wydanie używa fat LTO), kolejne są przyrostowe.
 
 ---
 
@@ -170,7 +167,7 @@ na panel:
   W nienazwanym panelu chip jest niewidoczny, dopóki nie najedziesz na panel.
 
 ### 1. Terminal (`>_`)
-- Prawdziwy terminal systemowy (node-pty + xterm.js), Twoja domyślna powłoka.
+- Prawdziwy terminal systemowy (natywne PTY w Ruście + xterm.js), Twoja domyślna powłoka.
 - Pełny scrollback trzymany w pamięci (do ~200 kB na sesję — element trybu oszczędnego).
 - W trybie vim działa **copy-mode** (patrz [Tryb vim](#tryb-vim)): ruchomy kursor, zaznaczanie i yank
   jak w neovim.
@@ -451,19 +448,28 @@ Dowolną zakładkę można otworzyć kontekstowo (np. z panelu agenta link „Ma
 ## Dane i prywatność
 
 Żadne dane użytkownika nie są trzymane w repozytorium. Wszystko ląduje w systemowym katalogu danych
-aplikacji (`app.getPath('userData')`):
+aplikacji (macOS: `~/Library/Application Support/com.vibecoder.app`, Linux: `~/.config/com.vibecoder.app`,
+Windows: `%APPDATA%\com.vibecoder.app`):
 
 - **`state.json`** — notatki, układy, przestrzenie, adresy przeglądarek, skróty i keymap vima, ustawienia
   RAM/Autopilot, zapisane połączenia SSH (nazwa + komenda + ewentualne hasło), profile agentów (w tym
   klucze API);
 - **załączniki notatek** (kopie plików);
 - **`claude/<id>` i `agents/<id>`** — izolowane configi/tokeny kont agentów;
-- **partycje przeglądarki per przestrzeń `persist:browser-ws<N>`** — cookies, cache, historia osadzonej
-  przeglądarki, osobne dla każdej przestrzeni roboczej.
+- **magazyny danych przeglądarki per przestrzeń** — cookies, cache i historia osadzonej przeglądarki,
+  osobne dla każdej przestrzeni roboczej (odpowiednik partycji `persist:browser-ws<N>` z wersji Electronowej).
 
-Dzięki temu spakowanie repo nie ujawnia notatek, plików, tokenów ani historii przeglądania. Repo zawiera
-tylko kod oraz zasoby ikony: `build/icon-source.png` (grafika źródłowa) i `build/icon.png` (wygenerowane
-logo, odtwarzalne komendą `python3 scripts/make-icon.py`). Operacje nieodwracalne (ubicie panelu/przestrzeni, usuwanie plików,
+**Przesiadka z wersji Electronowej.** Przy pierwszym starcie aplikacja jednorazowo kopiuje `state.json`,
+załączniki notatek oraz katalogi `claude/` i `agents/` ze starej lokalizacji (`…/vibe-coder`) — tylko
+wtedy, gdy po nowej stronie nic jeszcze nie ma, więc nigdy nie nadpisze świeższych danych. Cookies
+przeglądarki się nie przenoszą (format Chromium ≠ WebKit) — logowania w panelach trzeba odtworzyć.
+
+**Strony w panelach przeglądarki nie mają dostępu do aplikacji.** Uprawnienia Tauri są przypisane
+wyłącznie do webview interfejsu (`capabilities/ui.json`, klucz `webviews`, nie `windows`), a zdarzenia
+wewnętrzne — w tym wyjście terminali — idą adresowane do niego, nie rozgłoszeniowo. Gdyby capability
+obejmowała całe okno, dowolna odwiedzona strona mogłaby nasłuchiwać `pty:data`.
+
+Dzięki temu spakowanie repo nie ujawnia notatek, plików, tokenów ani historii przeglądania. Operacje nieodwracalne (ubicie panelu/przestrzeni, usuwanie plików,
 wysłanie tokenu na zdalny host) są **zawsze za potwierdzeniem**.
 
 ---
@@ -471,19 +477,21 @@ wysłanie tokenu na zdalny host) są **zawsze za potwierdzeniem**.
 ## Architektura kodu (data sheet)
 
 ```
+src-tauri/       proces główny (Rust)
+  src/lib.rs       okno, menu, panele przeglądarki (natywne webview), persystencja, motyw,
+                   migracja stanu ze starej instalacji Electronowej
+  src/pty.rs       PtyManager — natywne PTY, scalanie wyjścia na Condvarze, scrollback,
+                   śledzenie alternate screen (`pty:alt` — to trzyma tryb vim z dala od nvima),
+                   sesje agentów (lokalne + SSH)
+  src/files.rs     operacje na plikach, dialogi natywne (rfd), sortowanie naturalne
+  src/ssh.rs       parsowanie komendy ssh (host/user/port/klucz, ~/.ssh/config), SFTP
+  src/agents.rs    status/instalacja CLI agentów; agent_ssh_sync (kopia configu + zdalna instalacja)
+  src/ram.rs       monitor pamięci (sysinfo)
+  src/browser_script.rs  skrypt wstrzykiwany do stron (vim, link hints, scroll, run-bind, media)
+  build.rs         generuje rustowy rejestr agentów z src/shared/agents.json
+  capabilities/ui.json   uprawnienia WYŁĄCZNIE dla webview interfejsu (patrz Dane i prywatność)
 src/
-  main/        proces główny (Node/Electron)
-    index.ts       okno, rejestracja handlerów IPC
-    pty.ts         PtyManager — procesy PTY (node-pty), bufor historii, śledzenie alternate screen per
-                   sesja (`pty:alt` — to trzyma tryb vim z dala od nvima), sesje agentów (lokalne + SSH)
-    files.ts       operacje na plikach, dialogi (open file / open dir), zapisy
-    ssh.ts         parsowanie komendy ssh (host/user/port/klucz, ~/.ssh/config), SFTP
-    agents.ts      status/instalacja CLI agentów; agentSshSync (kopia configu + zdalna instalacja)
-    store.ts       persystencja stanu (state.json) + wartości domyślne
-    dialog.ts      natywne dialogi
-  preload/
-    index.ts       bezpieczny most IPC → window.api (typ Api)
-    webview.ts     preload osadzanej przeglądarki (vim, link hints, scroll, run-bind)
+  renderer/src/tauri-bridge.ts   most invoke/listen → window.api (kształt jak preload Electrona)
   renderer/        UI React
     App.tsx, main.tsx
     components/    PaneGrid, TerminalPane, BrowserPane, ViewerPane (+PdfView), ExplorerPane,
@@ -499,18 +507,13 @@ src/
     types.ts       typy + nazwy kanałów IPC (obiekt IPC)
     agents.ts      rejestr narzędzi AI (AGENT_TOOLS)
     vimKeys.ts     definicje akcji vima + matchVimKey/captureVimKey
-scripts/
-  fix-pty-perms.cjs   naprawa uprawnień spawn-helper node-pty
-  smoke.cjs           smoke test (liczniki uchwytów/listenerów)
-  alt-check.js        self-check śledzenia alternate screen (lustro main/pty.ts)
-  make-icon.py        build/icon-source.png → build/icon.png (squircle macOS)
-  stamp-downloaded.py ustawia macOS-owy „downloaded date" na aplikacji / instalatorach
-build/
-  icon-source.png     źródłowa grafika ikony
-  icon.png            wygenerowana ikona aplikacji (squircle, 1024 px)
+  shared/agents.json  JEDYNE źródło rejestru narzędzi AI (czyta je i TS, i build.rs)
 ```
 
-Komunikacja renderer ↔ main wyłącznie przez **IPC** (kanały zebrane w `IPC` w
+Self-checki siedzą przy kodzie, który sprawdzają: `cargo test` uruchamia asercje śledzenia
+alternate screen (`src/pty.rs`) i sortowania naturalnego (`src/files.rs`).
+
+Komunikacja renderer ↔ Rust wyłącznie przez **komendy Tauri i zdarzenia** (nazwy zebrane w `IPC` w
 [types.ts](src/shared/types.ts)) i bezpieczny most `window.api` z preloada. Stan UI trzyma zustand i
 zapisuje go z debounce do `state.json`.
 
@@ -520,20 +523,16 @@ zapisuje go z debounce do `state.json`.
 
 | Komenda | Działanie |
 |---|---|
-| `npm run dev` | tryb deweloperski (electron-vite, hot-reload) |
-| `npm run build` | bundle produkcyjne do `out/` |
-| `npm run package` | `build` + electron-builder → instalka w `release/` |
-| `npm run preview` / `start` | podgląd zbudowanej aplikacji |
-| `npm run rebuild` | przebudowa natywnego `node-pty` |
-| `node scripts/fix-pty-perms.cjs` | naprawa uprawnień spawn-helper (gdy `posix_spawnp failed`) |
-| `node scripts/smoke.cjs` | smoke test procesu głównego |
-| `node scripts/alt-check.js` | self-check logiki alternate screen, na której stoi tryb vim (asercje, na końcu `alt-check OK`) |
-| `python3 scripts/make-icon.py` | regeneruje `build/icon.png` z `build/icon-source.png` (płótno 1024 px, korpus 824 px); wymaga Pillow |
-| `python3 scripts/stamp-downloaded.py <ścieżka…>` | ustawia macOS-owy „downloaded date" (`kMDItemDownloadedDate`) na aplikacji/instalatorach; tylko macOS |
+| `npm run tauri dev` | tryb deweloperski (Vite + Rust, hot-reload) |
+| `npm run build` | bundle frontendu do `dist/` (`tsc` + Vite) |
+| `npm run tauri build` | pełna instalka do `src-tauri/target/release/bundle/` |
+| `npx tsc --noEmit` | sprawdzenie typów frontendu |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | self-checki: śledzenie alternate screen (na tym stoi tryb vim) i sortowanie naturalne |
+| `npx tauri icon <png>` | regeneruje komplet rozmiarów ikon z jednego PNG |
 
-`npm run package` buduje domyślnie pod bieżący system. Cross-build: `electron-builder --win`
-(na macOS/Linux wymaga wine) oraz `electron-builder --linux` (na macOS wymaga Dockera, albo odpal na
-Linuksie). Targety są w [electron-builder.yml](electron-builder.yml).
+Tauri nie umie cross-kompilować webview, więc każdy system buduje się u siebie —
+[.github/workflows/release.yml](.github/workflows/release.yml) robi dokładnie to po wypchnięciu tagu.
+Targety są w [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json).
 
 ---
 

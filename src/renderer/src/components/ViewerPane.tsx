@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import { renderAsync } from 'docx-preview'
 import { useStore } from '../state/store'
 import { matchVimKey, isDoubleFirst, WIN_MOTION_IDS, type DoubleState } from '../../../shared/vimKeys'
 import { armWinPending, clearWinPending, runWindowMotion } from '../shortcuts/dispatch'
 import { FIND_EVENT, type FindDetail } from '../shortcuts/find'
 import { createDomFinder, findInTextarea, type DomFinder } from '../lib/domFind'
-import PdfView from './PdfView'
+// pdf.js (~1,5 MB) i docx-preview (~0,4 MB) doczytujemy dopiero przy pierwszym otwarciu
+// takiego pliku. Wcześniej siedziały w głównym bundlu, który każdy start aplikacji musiał
+// sparsować — a większość sesji nigdy nie otwiera PDF-a ani .docx.
+const PdfView = lazy(() => import('./PdfView'))
 
 interface Props {
   paneId: string
@@ -170,16 +172,25 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
     if (f) ingest(f.name, b64ToBuf(f.base64), f.path)
   }, [ingest])
 
-  // Render .docx do diva
+  // Render .docx do diva (biblioteka doczytywana leniwie razem z pierwszym plikiem).
   useEffect(() => {
-    if (content?.kind === 'docx' && docxRef.current) {
-      docxRef.current.innerHTML = ''
-      renderAsync(new Blob([content.buf]), docxRef.current, undefined, {
-        className: 'docx',
-        inWrapper: true
-      }).catch(() => {
-        if (docxRef.current) docxRef.current.textContent = 'Cannot render this .docx file.'
+    if (content?.kind !== 'docx' || !docxRef.current) return
+    let dead = false
+    const host = docxRef.current
+    host.innerHTML = ''
+    void import('docx-preview')
+      .then(({ renderAsync }) => {
+        if (dead) return
+        return renderAsync(new Blob([content.buf]), host, undefined, {
+          className: 'docx',
+          inWrapper: true
+        })
       })
+      .catch(() => {
+        if (!dead) host.textContent = 'Cannot render this .docx file.'
+      })
+    return () => {
+      dead = true
     }
   }, [content])
 
@@ -670,7 +681,9 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
       )}
 
       {content?.kind === 'pdf' && (
-        <PdfView buf={content.buf} zoom={zoom} scrollRef={pdfScrollRef} innerRef={pdfInnerRef} />
+        <Suspense fallback={<div className="viewer-empty">Loading PDF engine…</div>}>
+          <PdfView buf={content.buf} zoom={zoom} scrollRef={pdfScrollRef} innerRef={pdfInnerRef} />
+        </Suspense>
       )}
 
       {copyMode && <div className="viewer-caret" ref={caretRef} />}
