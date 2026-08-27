@@ -22,13 +22,13 @@ fn generuj_rejestr_agentow() {
     };
 
     let mut out = String::from("// WYGENEROWANE przez build.rs z src/shared/agents.json — nie edytuj ręcznie.\n");
-    let _ = write!(out, "pub const AGENT_TOOLS: &[AgentTool] = &[\n");
+    let _ = writeln!(out, "pub const AGENT_TOOLS: &[AgentTool] = &[");
     for t in tools {
         let s = |k: &str| t.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
         let install_sh = opt(t.get("install").and_then(|i| i.get("sh")));
-        let _ = write!(
+        let _ = writeln!(
             out,
-            "    AgentTool {{ id: {:?}, name: {:?}, cmd: {:?}, config_env: {}, api_key_env: {}, install_sh: {} }},\n",
+            "    AgentTool {{ id: {:?}, name: {:?}, cmd: {:?}, config_env: {}, api_key_env: {}, install_sh: {} }},",
             s("id"), s("name"), s("cmd"),
             opt(t.get("configEnv")), opt(t.get("apiKeyEnv")), install_sh,
         );

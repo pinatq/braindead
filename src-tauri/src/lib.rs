@@ -55,6 +55,9 @@ fn ws_data_store(ws: u32) -> [u8; 16] {
 
 // ---- Browser panes (native child webviews) — proven in Phase 0 ----
 
+// Argumenty przychodzą płasko z invoke() — grupowanie ich w strukturę zmieniłoby
+// kształt wywołania po stronie TS bez żadnego zysku.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 fn add_pane(app: AppHandle, id: String, url: String, ws: u32, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let label = pane_label(&id);
