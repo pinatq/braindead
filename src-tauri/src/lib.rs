@@ -332,6 +332,10 @@ pub fn run() {
                 // auto_resize => the UI webview follows window resizes (was stuck at 1280x800).
                 WebviewBuilder::new("ui", WebviewUrl::App("index.html".into()))
                     .transparent(true)
+                    // Tauri domyślnie przechwytuje upuszczenie pliku z systemu i zamienia je
+                    // na własne zdarzenie — DOM nigdy nie dostaje `drop`, więc przeciąganie
+                    // plików do notatek nie działało. Wyłączamy, żeby działało HTML5 DnD.
+                    .disable_drag_drop_handler()
                     .auto_resize(),
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(1280.0, 800.0),
@@ -384,7 +388,7 @@ pub fn run() {
             files::dialog_save_notes, files::file_open, files::file_read, files::file_read_dir,
             files::file_delete, files::file_mkdir, files::file_create, files::file_save,
             files::notes_save_attachment, files::file_read_data_url, files::file_save_as,
-            files::dialog_open_dir,
+            files::dialog_open_dir, files::dialog_confirm, files::dialog_message,
             ssh::ssh_connect, ssh::ssh_disconnect, ssh::ssh_read_dir, ssh::ssh_read_file,
             ssh::ssh_write_file, ssh::ssh_mkdir, ssh::ssh_create, ssh::ssh_delete,
             agents::agent_status, agents::agent_install, agents::agent_ssh_sync

@@ -6,6 +6,7 @@ import type { NoteFile } from '../../../shared/types'
 import { newTextVimState, textVimKeydown, type TextVimState } from '../vim/textVim'
 import { FIND_EVENT, type FindDetail } from '../shortcuts/find'
 import { findInTextarea } from '../lib/domFind'
+import { askConfirm } from '../lib/dialogs'
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -202,14 +203,42 @@ export default function NotesPanel(): JSX.Element | null {
     window.addEventListener('mouseup', onUp)
   }
 
+  // Zamknięcie po kliknięciu obok panelu. Notatki to nakładka nad siatką paneli, a bez tego
+  // dało się je zamknąć wyłącznie przyciskiem — w Tauri było to szczególnie dotkliwe, bo
+  // panel przeglądarki pod spodem jest natywnym widokiem i zostaje schowany, dopóki notatki
+  // są otwarte (patrz BrowserPane: nakładki interfejsu leżą POD natywnymi webview).
+  //
+  // `pane:activate` dochodzi ze skryptu wstrzykniętego do stron: klik w treść natywnego
+  // panelu nie generuje żadnego zdarzenia DOM w interfejsie, więc bez tego kliknięcie
+  // w przeglądarkę nie zamykałoby notatek.
+  useEffect(() => {
+    if (!open) return
+    const outside = (t: EventTarget | null): boolean => {
+      const el = t instanceof Node ? (t as HTMLElement) : null
+      if (!el) return true
+      if (panelRef.current?.contains(el)) return false
+      // Klik w przycisk Notes w pasku sam przełącza panel — nie dokładamy drugiego zamknięcia.
+      return !(el instanceof Element && el.closest('[data-notes-toggle]'))
+    }
+    const onDown = (e: MouseEvent): void => {
+      if (outside(e.target)) toggleNotes()
+    }
+    document.addEventListener('mousedown', onDown, true)
+    const offPane = window.api.panes.onActivate(() => toggleNotes())
+    return () => {
+      document.removeEventListener('mousedown', onDown, true)
+      offPane()
+    }
+  }, [open, toggleNotes])
+
   const addFile = async (file: File): Promise<void> => {
     const b64 = await fileToBase64(file)
     const nf = await window.api.files.saveAttachment(nameFor(file), b64)
     addNotesFile(nf)
   }
 
-  const onClear = (): void => {
-    if (confirm('Clear all notes (incl. attachments)?')) clearNotes()
+  const onClear = async (): Promise<void> => {
+    if (await askConfirm('Clear all notes (incl. attachments)?')) clearNotes()
   }
   const onDump = async (): Promise<void> => {
     await window.api.dialog.saveNotes(notes)
@@ -241,6 +270,7 @@ export default function NotesPanel(): JSX.Element | null {
   return (
     <div
       className="notes-panel"
+      data-covers-panes=""
       ref={panelRef}
       style={size ? { width: size.w, height: size.h } : undefined}
       onPaste={onPaste}

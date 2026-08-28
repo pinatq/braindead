@@ -134,7 +134,14 @@ const api = {
   },
   dialog: {
     saveNotes: (content: string): Promise<{ saved: boolean; path?: string }> =>
-      invoke('dialog_save_notes', { content })
+      invoke('dialog_save_notes', { content }),
+    // Zamienniki confirm()/alert(). W WKWebView te dwie funkcje są martwe — wry nie
+    // implementuje WKUIDelegate dla okienek JS, więc confirm() zwraca od razu false,
+    // a alert() nie robi nic. Robimy je natywnie po stronie Rusta.
+    confirm: (title: string, message: string): Promise<boolean> =>
+      invoke('dialog_confirm', { title, message }),
+    message: (title: string, message: string): Promise<void> =>
+      invoke('dialog_message', { title, message })
   },
   files: {
     open: (): Promise<LoadedFile | null> => invoke('file_open'),

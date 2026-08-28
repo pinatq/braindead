@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="UTF-8"><title>Ustawienia — Vim</title>
+<link rel="stylesheet" href="/src/renderer/src/styles/theme.css">
+<style>body{background:#0e0f13;display:block;overflow:auto;height:auto;padding:24px 0}</style>
+</head><body>
+<div style="text-align:center;color:#8b909c;font:12px -apple-system;margin-bottom:14px">
+  podgląd ekranu ustawień &middot; okno ma stałe 760&nbsp;px, przewija się tylko treść
+</div>
+<div class="modal" style="margin:0 auto">
+  <div class="modal-head"><span>Settings</span><span style="cursor:pointer">&#10005;</span></div>
+  <div class="modal-tabs">
+    <button class="modal-tab">Shortcuts</button><button class="modal-tab modal-tab--on">Vim</button>
+    <button class="modal-tab">Browser</button><button class="modal-tab">Autopilot</button>
+    <button class="modal-tab">Agents</button><button class="modal-tab">SSH</button><button class="modal-tab">RAM</button>
+  </div>
+  <div class="modal-body">
+    <div class="setting-row setting-row--toggle"><div><b>Vim mode</b>
+      <span class="setting-sub">Vim-style navigation in panes.</span></div><input type="checkbox" checked></div>
+    <p class="setting-sub" style="margin-top:4px">Every key below is remappable in <b>Vim keys (movement)</b> further down. Defaults:</p>
+              <div class="vim-help">
+                <div class="vim-help-col">
+                  <h4>Terminal — copy-mode</h4>
+                  <div class="vk"><span class="vk-keys"><kbd>Esc</kbd></span><span class="vk-desc">
+                    enter <b>NORMAL</b> — a cursor you move like vim
+                  </span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></span><span class="vk-desc">move</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>w</kbd><span class="sep">/</span><kbd>b</kbd><span class="sep">/</span><kbd>e</kbd></span><span class="vk-desc">by word</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>0</kbd><span class="sep">/</span><kbd>$</kbd></span><span class="vk-desc">line start / end</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>gg</kbd><span class="sep">/</span><kbd>G</kbd></span><span class="vk-desc">top / bottom</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>Ctrl+d</kbd><span class="sep">/</span><kbd>u</kbd></span><span class="vk-desc">half page</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>v</kbd><span class="sep">/</span><kbd>V</kbd></span><span class="vk-desc">select / select line</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>y</kbd></span><span class="vk-desc">copy</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>i</kbd></span><span class="vk-desc">back to <b>INSERT</b></span></div>
+                  <span class="setting-sub">Typing is blocked in NORMAL — protects the shell.</span>
+                </div>
+
+                <div class="vim-help-col">
+                  <h4>Browser</h4>
+                  <div class="vk"><span class="vk-keys"><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></span><span class="vk-desc">scroll</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>d</kbd><span class="sep">/</span><kbd>u</kbd></span><span class="vk-desc">half page</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>gg</kbd><span class="sep">/</span><kbd>G</kbd></span><span class="vk-desc">top / bottom</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>f</kbd></span><span class="vk-desc">link hints</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>H</kbd><span class="sep">/</span><kbd>L</kbd></span><span class="vk-desc">back / forward</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>i</kbd></span><span class="vk-desc">next input field</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>Esc</kbd></span><span class="vk-desc">leave the field</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>:</kbd></span><span class="vk-desc">address bar</span></div>
+                </div>
+
+                <div class="vim-help-col">
+                  <h4>Windows — prefix <kbd>Ctrl+w</kbd></h4>
+                  <div class="vk"><span class="vk-keys"><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></span><span class="vk-desc">focus pane by direction</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>w</kbd><span class="sep">/</span><kbd>W</kbd></span><span class="vk-desc">cycle next / previous</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>s</kbd><span class="sep">/</span><kbd>v</kbd></span><span class="vk-desc">split down / right</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>o</kbd></span><span class="vk-desc">single pane</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>q</kbd></span><span class="vk-desc">kill pane</span></div>
+                  <span class="setting-sub">
+                    Press <kbd>Ctrl+w</kbd> first, then the key. Works in terminal, browser and viewer panes.
+                  </span>
+                </div>
+
+                <div class="vim-help-col">
+                  <h4>Viewer</h4>
+                  <div class="vk"><span class="vk-keys"><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd></span><span class="vk-desc">scroll</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>d</kbd><span class="sep">/</span><kbd>u</kbd></span><span class="vk-desc">half page</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>gg</kbd><span class="sep">/</span><kbd>G</kbd></span><span class="vk-desc">top / bottom</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>+</kbd><span class="sep">/</span><kbd>-</kbd><span class="sep">/</span><kbd>0</kbd></span><span class="vk-desc">
+                    zoom in / out / reset
+                  </span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>v</kbd></span><span class="vk-desc">copy-mode: caret on</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>v</kbd></span><span class="vk-desc">again — start selecting</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>y</kbd></span><span class="vk-desc">yank the selection</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>Esc</kbd></span><span class="vk-desc">exit copy-mode</span></div>
+                  <span class="setting-sub">
+                    Zoom covers images, PDF and .docx. PDF renders via pdf.js, so the text is real and
+                    selectable. The mouse still works everywhere.
+                  </span>
+                </div>
+
+                <div class="vim-help-col">
+                  <h4>Explorer</h4>
+                  <div class="vk"><span class="vk-keys"><kbd>j</kbd><span class="sep">/</span><kbd>k</kbd></span><span class="vk-desc">move</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>l</kbd><span class="sep">/</span><kbd>Enter</kbd></span><span class="vk-desc">open</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>h</kbd></span><span class="vk-desc">parent folder</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>gg</kbd><span class="sep">/</span><kbd>G</kbd></span><span class="vk-desc">top / bottom</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>N</kbd><span class="sep">/</span><kbd>F</kbd></span><span class="vk-desc">new folder / file</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>D</kbd></span><span class="vk-desc">delete (asks first)</span></div>
+                  <div class="vk"><span class="vk-keys"><kbd>:</kbd></span><span class="vk-desc">jump to a path</span></div>
+                  <span class="setting-sub">
+                    The <b>SSH</b> button browses and edits remote files over SFTP. Arrows, double-click,
+                    right-click menu and the Shortcuts tab work too.
+                  </span>
+                </div>
+              </div>
+  </div>
+  <div class="modal-foot">BrainDead &mdash; settings</div>
+</div>
+</body></html>

@@ -115,7 +115,7 @@ export default function LayoutPicker(): JSX.Element {
         ▦ Layout
       </button>
       {open && (
-        <div className="layout-popover" ref={popRef} tabIndex={-1} onKeyDown={onKeyDown}>
+        <div className="layout-popover" data-covers-panes="" ref={popRef} tabIndex={-1} onKeyDown={onKeyDown}>
           {LAYOUT_GROUPS.map((group, gi) => (
             <div className="layout-row" key={gi}>
               <span className="layout-row-num">{gi + 1}</span>

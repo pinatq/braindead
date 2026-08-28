@@ -5,6 +5,7 @@ import { agentTool } from '../../../shared/agents'
 import { matchVimKey } from '../../../shared/vimKeys'
 import type { AgentProfile } from '../../../shared/types'
 import TerminalPane from './TerminalPane'
+import { askConfirm, showMessage } from '../lib/dialogs'
 
 interface Props {
   paneId: string
@@ -55,7 +56,7 @@ export default function AgentPane({ paneId }: Props): JSX.Element {
   const runAccount = async (p: AgentProfile): Promise<void> => {
     if (target !== 'local' && targetConn) {
       const remotePath = p.sshDir?.trim() || '~'
-      const ok = confirm(
+      const ok = await askConfirm(
         `Set up "${p.name}" (${toolName(p.tool)}) on ${targetConn.name}?\n` +
           `Copies your local login/token to the remote and installs the CLI there if missing.`
       )
@@ -66,7 +67,7 @@ export default function AgentPane({ paneId }: Props): JSX.Element {
         busyProfile.current = ''
         setBusy('')
         if (!r.ok) {
-          alert('SSH setup failed:\n' + r.output)
+          void showMessage('SSH setup failed:\n' + r.output)
           return
         }
         if (r.output) console.log('[agent ssh setup]\n' + r.output)

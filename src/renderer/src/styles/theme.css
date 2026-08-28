@@ -846,7 +846,9 @@ button:disabled {
   position: absolute;
   left: 6px;
   top: 5px;
-  z-index: 6;
+  /* Nad paskiem eksploratora (z-index 8). Wcześniej chip miał 6 i pasek go przykrywał,
+     więc w trybie eksploratora nie dało się w ogóle ustawić nazwy panelu. */
+  z-index: 9;
   max-width: 60%;
   padding: 1px 7px;
   border-radius: 5px;
@@ -865,10 +867,14 @@ button:disabled {
   opacity: 0;
   border-color: transparent;
   background: transparent;
+  /* Niewidoczny chip nie może łapać kliknięć — inaczej (teraz, gdy leży nad paskiem)
+     zjadałby przyciski „wstecz/dalej/dom" eksploratora. */
+  pointer-events: none;
   transition: opacity 0.12s ease;
 }
 .pane:hover .pane-title--empty {
   opacity: 0.4;
+  pointer-events: auto;
 }
 .pane-title--empty:hover {
   opacity: 0.9;
@@ -2030,9 +2036,18 @@ kbd {
   outline: none;
   background: var(--bg);
 }
+/* Nazwany panel w trybie eksploratora: chip tytułu dostaje własny pas z lewej, żeby nie
+   zasłaniał przycisków nawigacji (nienazwany jest przezroczysty i nie łapie kliknięć). */
+.pane--explorer.pane--titled .explorer-bar {
+  padding-left: 124px;
+}
+.pane--explorer.pane--titled .pane-title {
+  max-width: 112px;
+}
+
 .explorer-bar {
   position: relative;
-  z-index: 8; /* nad chipem tytułu panelu (z-index 6), żeby przyciski dało się klikać */
+  z-index: 8;
   display: flex;
   align-items: center;
   gap: 6px;

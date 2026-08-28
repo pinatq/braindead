@@ -4,6 +4,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 import TermBrowserSwitch from './TermBrowserSwitch'
 import LayoutPicker from './LayoutPicker'
 import RamIndicator from './RamIndicator'
+import { askConfirm } from '../lib/dialogs'
 
 /** Top toolbar, separated from the pane area by a thin line. */
 export default function Toolbar(): JSX.Element {
@@ -15,11 +16,11 @@ export default function Toolbar(): JSX.Element {
   const addNotesFile = useStore((s) => s.addNotesFile)
 
   // Operacje nieodwracalne (ubijają PTY + kasują historię/webview) → zawsze z potwierdzeniem.
-  const onKillPane = (): void => {
-    if (confirm('Kill the active pane? Its terminal/browser history will be wiped.')) killPane()
+  const onKillPane = async (): Promise<void> => {
+    if (await askConfirm('Kill the active pane? Its terminal/browser history will be wiped.')) killPane()
   }
-  const onKillWorkspace = (): void => {
-    if (confirm('Kill this entire workspace? All its panes will be wiped.')) killWorkspace()
+  const onKillWorkspace = async (): Promise<void> => {
+    if (await askConfirm('Kill this entire workspace? All its panes will be wiped.')) killWorkspace()
   }
 
   // Upuszczenie pliku (z eksploratora) na przycisk Notes → dodaj jako załącznik notatki.
@@ -44,6 +45,9 @@ export default function Toolbar(): JSX.Element {
     <div className="toolbar" data-tauri-drag-region="deep">
       <div className="toolbar-left">
         <button
+          // Znacznik dla NotesPanel: klik w ten przycisk to przełączenie, nie „klik obok"
+          // (bez tego zamknięcie-po-kliknięciu i toggle znosiłyby się nawzajem).
+          data-notes-toggle=""
           className={'tool-btn' + (notesOpen ? ' tool-btn--on' : '')}
           onClick={toggleNotes}
           onDragOver={(e) => e.preventDefault()}

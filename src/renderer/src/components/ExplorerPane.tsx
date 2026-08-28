@@ -10,6 +10,7 @@ import {
   EXPLORER_CMD_EVENT
 } from '../shortcuts/dispatch'
 import { FIND_EVENT, type FindDetail } from '../shortcuts/find'
+import { askConfirm, showMessage } from '../lib/dialogs'
 
 interface Props {
   paneId: string
@@ -178,11 +179,11 @@ export default function ExplorerPane({ paneId }: Props): JSX.Element {
   const del = useCallback(
     async (e: DirEntry): Promise<void> => {
       const what = e.isDir ? 'folder' : 'file'
-      if (!confirm(`Delete this ${what}?\n${e.path}`)) return
+      if (!(await askConfirm(`Delete this ${what}?\n${e.path}`))) return
       const c = connRef.current
       const r = c ? await window.api.ssh.delete(c.id, e.path) : await window.api.files.deletePath(e.path)
       if (!r.ok) {
-        alert('Delete failed: ' + (r.error ?? 'unknown'))
+        void showMessage('Delete failed: ' + (r.error ?? 'unknown'))
         return
       }
       const l = listingRef.current
@@ -218,7 +219,7 @@ export default function ExplorerPane({ paneId }: Props): JSX.Element {
           : await window.api.files.makeFile(l.path, name)
     setCreating(null)
     if (!r.ok) {
-      alert((kind === 'dir' ? 'Create folder failed: ' : 'Create file failed: ') + (r.error ?? 'unknown'))
+      void showMessage((kind === 'dir' ? 'Create folder failed: ' : 'Create file failed: ') + (r.error ?? 'unknown'))
       return
     }
     load(l.path, false)

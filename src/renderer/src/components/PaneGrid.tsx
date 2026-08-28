@@ -108,6 +108,10 @@ export default function PaneGrid({ workspaceId, visible }: Props): JSX.Element {
             data-pane-id={pane.id}
             className={
               'pane' +
+              // Tryb i „czy ma nazwę" w klasie: CSS rezerwuje wtedy pas na chip tytułu
+              // w pasku eksploratora (patrz theme.css, .pane--explorer.pane--titled).
+              ' pane--' + pane.mode +
+              (pane.title ? ' pane--titled' : '') +
               (active ? ' pane--active' : '') +
               (autoScrolling ? ' pane--autoscroll' : '') +
               (autoApprove ? ' pane--autoapprove' : '') +

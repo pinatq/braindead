@@ -169,6 +169,35 @@ mod tests {
     }
 }
 
+// ---- Okna dialogowe zastępujące confirm()/alert() ----
+//
+// wry NIE implementuje WKUIDelegate.runJavaScriptConfirmPanel ani ...AlertPanel, więc
+// w WKWebView `confirm()` zwraca od razu `false`, a `alert()` nic nie robi — bez okienka
+// i bez błędu. Efekt: WSZYSTKO za potwierdzeniem było martwe (ubicie panelu i przestrzeni,
+// kasowanie plików w eksploratorze, czyszczenie notatek, instalacja agenta), a komunikaty
+// o błędach nigdy się nie pokazywały. Robimy więc dialogi natywnie, przez rfd (już w zależnościach).
+
+#[tauri::command(async)]
+pub fn dialog_confirm(title: String, message: String) -> bool {
+    rfd::MessageDialog::new()
+        .set_title(&title)
+        .set_description(&message)
+        .set_buttons(rfd::MessageButtons::OkCancel)
+        .set_level(rfd::MessageLevel::Warning)
+        .show()
+        == rfd::MessageDialogResult::Ok
+}
+
+#[tauri::command(async)]
+pub fn dialog_message(title: String, message: String) {
+    rfd::MessageDialog::new()
+        .set_title(&title)
+        .set_description(&message)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .set_level(rfd::MessageLevel::Error)
+        .show();
+}
+
 // ---- Commands ----
 
 // dialog.ts saveNotes: notes-<ISO-ts>.txt with ':'/'T' -> '-'.

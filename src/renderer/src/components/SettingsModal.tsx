@@ -12,6 +12,7 @@ import { VIM_ACTIONS, captureVimKey, formatVimKey } from '../../../shared/vimKey
 import type { ClaudeCliStatus } from '../../../shared/types'
 import { AGENT_TOOLS, agentTool, type AgentToolId } from '../../../shared/agents'
 import RamControls from './RamControls'
+import { askConfirm } from '../lib/dialogs'
 
 type Tab = 'shortcuts' | 'vim' | 'browser' | 'autopilot' | 'agents' | 'ssh' | 'ram'
 
@@ -251,7 +252,7 @@ function AgentSettings(): JSX.Element {
       setInstallLog(`No automatic installer for ${tool.name} — install it manually, then reopen this tab.`)
       return
     }
-    if (!confirm(`Install ${tool.name} now? This downloads & runs the official installer.`)) return
+    if (!(await askConfirm(`Install ${tool.name} now? This downloads & runs the official installer.`))) return
     setInstalling(toolId)
     setInstallLog(`Installing ${tool.name}… this can take a minute.`)
     try {
@@ -484,7 +485,7 @@ export default function SettingsModal(): JSX.Element | null {
   if (!open) return null
 
   return (
-    <div className="modal-overlay" onMouseDown={() => setOpen(false)}>
+    <div className="modal-overlay" data-covers-panes="" onMouseDown={() => setOpen(false)}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span>Settings</span>

@@ -52,7 +52,7 @@ export default function RamIndicator(): JSX.Element {
       )}
 
       {open && (
-        <div className="ram-panel">
+        <div className="ram-panel" data-covers-panes="">
           <div className="ram-panel-head">
             <span>Memory</span>
             <button className="icon-btn" data-tip="Close" onClick={() => setOpen(false)}>

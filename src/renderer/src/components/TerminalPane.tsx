@@ -191,7 +191,38 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     // Klawiatura w trybie NORMAL: nawigacja zamiast wejścia do PTY.
     term.attachCustomKeyEventHandler((e: KeyboardEvent): boolean => {
       if (e.type !== 'keydown') return true
-      if (!vimRef.current || isAlt()) return true
+      if (!vimRef.current) return true
+
+      const vb = vimBindsRef.current
+
+      // PRIORYTET APLIKACJI. Nawigacja między panelami (prefiks Ctrl-w + ruch) jest łapana
+      // ZAWSZE: także w INSERT i także nad programem pełnoekranowym. Bez tego, przy włączonym
+      // vim-mode i uruchomionym Neovimie, nie dało się wyjść z panelu — Ctrl-w trafiał do
+      // nvima, który ma własny prefiks okien, i klawiatura zostawała uwięziona w edytorze.
+      // Cena jest świadoma: nvim nie dostaje swojego Ctrl-w. Klawisz jest przemapowywalny
+      // (Ustawienia → Vim → win.prefix), więc kto woli oddać go edytorowi, może go zmienić.
+      if (winPendingRef.current) {
+        const act = WIN_MOTION_IDS.find((id) => matchVimKey(vb[id], e))
+        winPendingRef.current = false
+        if (winTimerRef.current) clearTimeout(winTimerRef.current)
+        clearWinPending()
+        if (act) runWindowMotion(act)
+        e.preventDefault()
+        return false
+      }
+      if (matchVimKey(vb['win.prefix'], e)) {
+        winPendingRef.current = true
+        armWinPending()
+        if (winTimerRef.current) clearTimeout(winTimerRef.current)
+        winTimerRef.current = setTimeout(() => (winPendingRef.current = false), 2200)
+        e.preventDefault()
+        return false
+      }
+
+      // Poza nawigacją okien vim-mode USTĘPUJE programom pełnoekranowym: nvim, htop i spółka
+      // potrzebują swoich klawiszy (j/k/Esc/v). Stan bierzemy z PTY (zdarzenie pty:alt),
+      // bo bufor xterma po odtworzeniu scrollbacku bywa niewiarygodny.
+      if (isAlt()) return true
 
       // Wyjście INSERT->NORMAL zależne od ustawienia (konflikt z Esc w Neovim itp.).
       if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -225,28 +256,8 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
       // W INSERT piszemy normalnie (przepuszczamy wszystko do PTY).
       if (modeRef.current !== 'normal') return true
 
-      const vb = vimBindsRef.current
       const dbl = dblRef.current
       const half = Math.max(1, Math.floor(term.rows / 2))
-
-      // Prefiks Ctrl-w: czekamy na drugi klawisz (nawigacja oknami).
-      if (winPendingRef.current) {
-        const act = WIN_MOTION_IDS.find((id) => matchVimKey(vb[id], e))
-        winPendingRef.current = false
-        if (winTimerRef.current) clearTimeout(winTimerRef.current)
-        clearWinPending()
-        if (act) runWindowMotion(act)
-        e.preventDefault()
-        return false
-      }
-      if (matchVimKey(vb['win.prefix'], e)) {
-        winPendingRef.current = true
-        armWinPending()
-        if (winTimerRef.current) clearTimeout(winTimerRef.current)
-        winTimerRef.current = setTimeout(() => (winPendingRef.current = false), 2200)
-        e.preventDefault()
-        return false
-      }
 
       // ⌘/⌥-skróty przepuszczamy (kopiowanie, bindy programu). Zmapowane C-* łapiemy niżej.
       if (e.metaKey || e.altKey) return true

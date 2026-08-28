@@ -1,6 +1,7 @@
 import { useStore } from '../state/store'
 import { FIND_FOCUS_EVENT } from './find'
 import type { PaneMode } from '../../../shared/types'
+import { askConfirm } from '../lib/dialogs'
 
 // Komendy kart przeglądarki obsługuje aktywny BrowserPane (nasłuchuje tego eventu).
 export type PaneCmd = 'tab.new' | 'tab.close' | 'tab.next' | 'tab.prev'
@@ -116,7 +117,9 @@ export function runWindowMotion(actionId: string): void {
       return
     }
     case 'win.close':
-      if (confirm('Kill the active pane? Its terminal/browser history will be wiped.')) s.killPane()
+      void askConfirm('Kill the active pane? Its terminal/browser history will be wiped.').then(
+        (ok) => ok && s.killPane()
+      )
       return
     case 'win.splitDown':
       return s.setLayout('2-rows')

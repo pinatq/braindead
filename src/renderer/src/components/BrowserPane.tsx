@@ -67,6 +67,25 @@ function normalizeUrl(input: string): string {
   return 'https://duckduckgo.com/?q=' + encodeURIComponent(v)
 }
 
+/**
+ * Czy nakładka interfejsu zasłania ten prostokąt.
+ *
+ * Natywne webview paneli leżą ZAWSZE nad webview interfejsu, więc modal ustawień, notatki
+ * czy popover układów byłyby pod stroną — trzeba panel schować. Ale chowanie WSZYSTKICH
+ * paneli przy każdej nakładce było za grube: notatki to wąska szuflada, a znikała przez nią
+ * cała przeglądarka (i wyglądało to, jakby się nie ładowała). Liczymy więc realne przecięcie
+ * z elementami oznaczonymi `data-covers-panes` — modal pełnoekranowy zasłoni wszystko,
+ * szuflada notatek tylko to, co pod nią leży.
+ */
+function coveredByUi(r: DOMRect): boolean {
+  for (const el of document.querySelectorAll('[data-covers-panes]')) {
+    const o = el.getBoundingClientRect()
+    if (o.width <= 0 || o.height <= 0) continue
+    if (o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top) return true
+  }
+  return false
+}
+
 // --- Pojedyncza karta = jeden natywny webview (child webview `pane:{fullId}` nad oknem "ui").
 // Placeholder-div rezerwuje prostokąt w layoucie; natywny widok pozycjonujemy na jego
 // współrzędne okna (add przy montowaniu, move przy zmianie, close przy odmontowaniu).
@@ -74,12 +93,14 @@ function NativeBrowserView({
   fullId,
   url,
   ws,
-  active
+  active,
+  uiTick
 }: {
   fullId: string
   url: string // adres startowy (przy add); późniejsze nawigacje idą przez panes.navigate
   ws: number // przestrzeń robocza = magazyn cookies (odpowiednik partycji persist:)
-  active: boolean // widoczna karta: aktywna, w bieżącym workspace, bez overlaya i zoomu obcego panelu
+  active: boolean // aktywna karta w bieżącym workspace, bez zoomu obcego panelu
+  uiTick: boolean // zmienia się przy otwarciu/zamknięciu nakładki — wymusza przeliczenie widoczności
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const activeRef = useRef(active)
@@ -96,7 +117,8 @@ function NativeBrowserView({
     // Widoczność: tylko aktywna karta; prostokąt 0x0 = grid schowany (display:none) = ukryj.
     const applyVis = (): void => {
       const r = el.getBoundingClientRect()
-      window.api.panes.setVisible(fullId, activeRef.current && r.width > 0 && r.height > 0)
+      const ok = r.width > 0 && r.height > 0
+      window.api.panes.setVisible(fullId, activeRef.current && ok && !coveredByUi(r))
     }
 
     const sync = (): void => {
@@ -138,8 +160,8 @@ function NativeBrowserView({
   useEffect(() => {
     const r = ref.current?.getBoundingClientRect()
     const ok = !!r && r.width > 0 && r.height > 0
-    window.api.panes.setVisible(fullId, active && ok)
-  }, [fullId, active])
+    window.api.panes.setVisible(fullId, active && ok && !coveredByUi(r as DOMRect))
+  }, [fullId, active, uiTick])
 
   // Bez display:none dla nieaktywnych: placeholder trzyma prostokąt, dzięki czemu karty
   // w tle też mają natywny widok (ładują się) — są tylko schowane po stronie natywnej.
@@ -190,12 +212,14 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
     return s.current
   })
   const wsVisible = useStore((s) => s.current === wsId)
-  // Overlay interfejsu (ustawienia, notatki, find…) leży POD natywnym webview, więc na
-  // czas jego trwania chowamy strony. To samo przy zoomie: panel rozciągnięty na siatkę
-  // leżałby pod natywnymi widokami paneli zostawionych pod spodem.
-  const overlay = useStore(uiOverlayOpen)
+  // Otwarcie/zamknięcie nakładki nie rusza layoutu, więc ResizeObserver się nie odezwie —
+  // ta wartość służy wyłącznie jako sygnał do przeliczenia widoczności (kto kogo zasłania,
+  // liczy coveredByUi na prostokątach).
+  const uiTick = useStore(uiOverlayOpen)
+  // Zoom to nie nakładka interfejsu, tylko inny panel rozciągnięty na całą siatkę —
+  // pozostałe panele muszą zejść, bo leżałyby nad nim.
   const coveredByZoom = useStore((s) => s.zoomPaneId !== null && s.zoomPaneId !== paneId)
-  const paneVisible = wsVisible && !overlay && !coveredByZoom
+  const paneVisible = wsVisible && !coveredByZoom
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
@@ -558,6 +582,7 @@ export default function BrowserPane({ paneId, url }: Props): JSX.Element {
               fullId={paneId + ':' + t.id}
               url={t.url}
               ws={wsId}
+              uiTick={uiTick}
               active={t.id === activeTabId && paneVisible}
             />
           )
