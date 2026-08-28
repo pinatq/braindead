@@ -87,7 +87,7 @@ fn add_pane(app: AppHandle, id: String, url: String, ws: u32, x: f64, y: f64, w:
                             .map(|(_, v)| v.into_owned())
                     };
                     let payload = match cmd {
-                        "activate" => Some(("pane:activate", json!({ "id": nav_id }))),
+                        "activate" => Some(("pane:activate", json!({ "id": nav_id, "click": param("click").as_deref() == Some("1") }))),
                         "open-tab" => Some(("pane:open-tab", json!({ "id": nav_id, "url": param("url") }))),
                         "run-bind" => Some(("pane:run-bind", json!({ "id": nav_id, "combo": param("combo") }))),
                         "focus-url" => Some(("pane:focus-url", json!({ "id": nav_id }))),

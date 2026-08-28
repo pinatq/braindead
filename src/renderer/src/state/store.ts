@@ -132,6 +132,7 @@ export interface State {
   setPanePty: (paneId: string, ptyId: string) => void
   setPaneUrl: (paneId: string, url: string) => void
   toggleNotes: () => void
+  setNotesOpen: (open: boolean) => void
   setLayoutPickerOpen: (open: boolean) => void
   toggleSettings: () => void
   setSettingsOpen: (open: boolean) => void
@@ -656,6 +657,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   toggleNotes: () => set((s) => ({ notesOpen: !s.notesOpen })),
+  setNotesOpen: (open) => set({ notesOpen: open }),
   setLayoutPickerOpen: (open) => set({ layoutPickerOpen: open }),
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),

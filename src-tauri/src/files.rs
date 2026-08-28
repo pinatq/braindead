@@ -1,7 +1,14 @@
 // Local files + native dialogs — port of Electron's src/main/files.ts and dialog.ts (saveNotes).
-// Dialogs go through rfd. Every command here is #[tauri::command(async)] — bez tego Tauri v2
-// wykonuje komendy synchroniczne na wątku GŁÓWNYM i każdy dialog/odczyt zamraża całe okno.
-// rfd sam przerzuca natywny dialog z powrotem na main thread (run_on_main), więc to bezpieczne.
+// PODZIAŁ WĄTKÓW — dwie różne reguły, łatwe do pomylenia:
+//
+//  * Komendy robiące IO (odczyt/zapis plików, sieć) są `#[tauri::command(async)]`. Bez tego
+//    Tauri v2 wykonuje je na wątku GŁÓWNYM i długi odczyt zamraża całe okno.
+//
+//  * Komendy otwierające natywne OKNO MODALNE (rfd) są celowo SYNCHRONICZNE, czyli zostają
+//    na wątku głównym. AppKit i tak wymaga głównego wątku: z wątku roboczego rfd robi
+//    dispatch_sync na main queue i uruchamia tam zagnieżdżoną pętlę modalną wewnątrz pętli
+//    zdarzeń Tauri — egzotyczna konstrukcja, która potrafi zablokować aplikację. Modal
+//    blokuje interfejs z definicji, więc trzymanie go na wątku głównym niczego nie kosztuje.
 // Shapes mirror src/shared/types.ts exactly: LoadedFile / DirListing / NoteFile.
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -177,7 +184,7 @@ mod tests {
 // kasowanie plików w eksploratorze, czyszczenie notatek, instalacja agenta), a komunikaty
 // o błędach nigdy się nie pokazywały. Robimy więc dialogi natywnie, przez rfd (już w zależnościach).
 
-#[tauri::command(async)]
+#[tauri::command]
 pub fn dialog_confirm(title: String, message: String) -> bool {
     rfd::MessageDialog::new()
         .set_title(&title)
@@ -188,7 +195,7 @@ pub fn dialog_confirm(title: String, message: String) -> bool {
         == rfd::MessageDialogResult::Ok
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 pub fn dialog_message(title: String, message: String) {
     rfd::MessageDialog::new()
         .set_title(&title)
@@ -201,7 +208,7 @@ pub fn dialog_message(title: String, message: String) {
 // ---- Commands ----
 
 // dialog.ts saveNotes: notes-<ISO-ts>.txt with ':'/'T' -> '-'.
-#[tauri::command(async)]
+#[tauri::command]
 pub fn dialog_save_notes(content: String) -> Value {
     let ts = iso_stamp();
     let mut dlg = rfd::FileDialog::new();
@@ -219,7 +226,7 @@ pub fn dialog_save_notes(content: String) -> Value {
     }
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 pub fn file_open() -> Result<Option<LoadedFile>, String> {
     let mut dlg = rfd::FileDialog::new();
     dlg = dlg.set_title("Open file");
@@ -323,7 +330,7 @@ pub fn file_read_data_url(file_path: String) -> Result<String, String> {
 }
 
 // files.ts saveAs: save dialog (Finder) + copy the file to the chosen location.
-#[tauri::command(async)]
+#[tauri::command]
 pub fn file_save_as(src_path: String, suggested_name: String) -> Result<Value, String> {
     let dlg = rfd::FileDialog::new()
         .set_title("Save to disk")
@@ -337,7 +344,7 @@ pub fn file_save_as(src_path: String, suggested_name: String) -> Result<Value, S
     }
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 pub fn dialog_open_dir() -> Option<String> {
     rfd::FileDialog::new()
         .set_title("Choose project folder")

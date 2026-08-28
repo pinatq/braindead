@@ -111,7 +111,10 @@ const TEMPLATE: &str = r#"
   })();
 
   // Klik / focus w treści => aktywuj panel (niebieska ramka) — jak mousedown w preloadzie.
-  window.addEventListener('mousedown', function () { go('activate', {}); }, true);
+  // `click: 1` = prawdziwe kliknięcie użytkownika. Focus leci seriami (autofocus, iframe'y,
+  // skrypty strony wołające .focus()), więc odbiorca musi umieć je odróżnić — inaczej każda
+  // reakcja podpięta pod pane:activate dostaje lawinę zdarzeń.
+  window.addEventListener('mousedown', function () { go('activate', { click: 1 }); }, true);
   window.addEventListener('focus', function () { go('activate', {}); }, true);
 
   // ================= Linki → nowa karta =================

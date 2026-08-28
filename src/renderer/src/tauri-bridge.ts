@@ -35,7 +35,7 @@ const paneTitleCbs = new Set<(e: { id: string; title: string }) => void>()
 // Events emitted BY the injected browser script (port of the Electron webview preload).
 const paneOpenTabCbs = new Set<(e: { id: string; url: string }) => void>()
 const paneRunBindCbs = new Set<(e: { id: string; combo: string }) => void>()
-const paneActivateCbs = new Set<(e: { id: string }) => void>()
+const paneActivateCbs = new Set<(e: { id: string; click: boolean }) => void>()
 const paneFocusUrlCbs = new Set<(e: { id: string }) => void>()
 const paneWinMotionCbs = new Set<(e: { id: string; act: string }) => void>()
 const paneWinPrefixCbs = new Set<(e: { id: string }) => void>()
@@ -81,7 +81,9 @@ void listen<{ id: string; url: string }>('pane:open-tab', (e) =>
 void listen<{ id: string; combo: string }>('pane:run-bind', (e) =>
   paneRunBindCbs.forEach((cb) => cb(e.payload))
 )
-void listen<{ id: string }>('pane:activate', (e) => paneActivateCbs.forEach((cb) => cb(e.payload)))
+void listen<{ id: string; click: boolean }>('pane:activate', (e) =>
+  paneActivateCbs.forEach((cb) => cb(e.payload))
+)
 void listen<{ id: string }>('pane:focus-url', (e) => paneFocusUrlCbs.forEach((cb) => cb(e.payload)))
 void listen<{ id: string; act: string }>('pane:win-motion', (e) =>
   paneWinMotionCbs.forEach((cb) => cb(e.payload))
@@ -239,7 +241,7 @@ const api = {
       paneRunBindCbs.add(cb)
       return () => void paneRunBindCbs.delete(cb)
     },
-    onActivate: (cb: (e: { id: string }) => void): (() => void) => {
+    onActivate: (cb: (e: { id: string; click: boolean }) => void): (() => void) => {
       paneActivateCbs.add(cb)
       return () => void paneActivateCbs.delete(cb)
     },

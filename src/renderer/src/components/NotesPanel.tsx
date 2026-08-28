@@ -87,6 +87,7 @@ export default function NotesPanel(): JSX.Element | null {
   const setNotes = useStore((s) => s.setNotes)
   const clearNotes = useStore((s) => s.clearNotes)
   const toggleNotes = useStore((s) => s.toggleNotes)
+  const setNotesOpen = useStore((s) => s.setNotesOpen)
   const addNotesFile = useStore((s) => s.addNotesFile)
   const removeNotesFile = useStore((s) => s.removeNotesFile)
   const vimMode = useStore((s) => s.vimMode)
@@ -221,15 +222,20 @@ export default function NotesPanel(): JSX.Element | null {
       return !(el instanceof Element && el.closest('[data-notes-toggle]'))
     }
     const onDown = (e: MouseEvent): void => {
-      if (outside(e.target)) toggleNotes()
+      if (outside(e.target)) setNotesOpen(false)
     }
     document.addEventListener('mousedown', onDown, true)
-    const offPane = window.api.panes.onActivate(() => toggleNotes())
+    // ZAMYKAMY, nie przełączamy — i tylko na prawdziwe kliknięcie. `pane:activate` leci też
+    // przy każdym `focus` w stronie (autofocus, iframe'y, skrypty), więc przełącznik podpięty
+    // pod to zdarzenie otwierał i zamykał panel w kółko, zatykając aplikację.
+    const offPane = window.api.panes.onActivate((e) => {
+      if (e.click) setNotesOpen(false)
+    })
     return () => {
       document.removeEventListener('mousedown', onDown, true)
       offPane()
     }
-  }, [open, toggleNotes])
+  }, [open, setNotesOpen])
 
   const addFile = async (file: File): Promise<void> => {
     const b64 = await fileToBase64(file)

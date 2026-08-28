@@ -105,7 +105,25 @@ function NativeBrowserView({
   const ref = useRef<HTMLDivElement>(null)
   const activeRef = useRef(active)
   const startUrlRef = useRef(url) // celowo raz — zmiany url nie przeładowują widoku
+  // Ostatnio wysłana widoczność. `setVisible` to komenda SYNCHRONICZNA (musi być — dotyka
+  // okna), więc leci na wątku głównym: wołanie jej przy każdym powiadomieniu ResizeObservera
+  // zatykało aplikację. Wysyłamy tylko przy realnej zmianie.
+  const lastVisRef = useRef<boolean | null>(null)
+  // Czy nakładka interfejsu zasłania ten panel. Liczone POZA callbackiem ResizeObservera:
+  // czytanie getBoundingClientRect() cudzych elementów w jego wnętrzu wymusza synchroniczny
+  // layout i potrafi rozkręcić pętlę RO → layout → RO.
+  const coveredRef = useRef(false)
   activeRef.current = active
+
+  const applyVis = useCallback((): void => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const vis = activeRef.current && r.width > 0 && r.height > 0 && !coveredRef.current
+    if (lastVisRef.current === vis) return // bez zmiany — żadnego IPC
+    lastVisRef.current = vis
+    window.api.panes.setVisible(fullId, vis)
+  }, [fullId])
 
   useEffect(() => {
     const el = ref.current
@@ -113,13 +131,6 @@ function NativeBrowserView({
     let dead = false
     let added = false
     let last = { x: 0, y: 0, w: 0, h: 0 }
-
-    // Widoczność: tylko aktywna karta; prostokąt 0x0 = grid schowany (display:none) = ukryj.
-    const applyVis = (): void => {
-      const r = el.getBoundingClientRect()
-      const ok = r.width > 0 && r.height > 0
-      window.api.panes.setVisible(fullId, activeRef.current && ok && !coveredByUi(r))
-    }
 
     const sync = (): void => {
       if (dead) return
@@ -130,8 +141,15 @@ function NativeBrowserView({
         last = { x: r.x, y: r.y, w: r.width, h: r.height }
         void window.api.panes.add(fullId, startUrlRef.current, ws, r.x, r.y, r.width, r.height).then(() => {
           // Po dodaniu dosynchronizuj (pozycja/widoczność mogły się zmienić w międzyczasie).
-          if (dead) window.api.panes.close(fullId) // odmontowano w trakcie dodawania
-          else sync()
+          if (dead) {
+            window.api.panes.close(fullId) // odmontowano w trakcie dodawania
+            return
+          }
+          // Widoczność wysłana PRZED utworzeniem widoku trafiła w próżnię (komenda odrzuca
+          // nieznany panel). Kasujemy pamięć ostatniej wartości, żeby sync() na pewno ją
+          // wysłał jeszcze raz — inaczej karta, która ma być ukryta, zostałaby widoczna.
+          lastVisRef.current = null
+          sync()
         })
       } else if (
         ok &&
@@ -150,18 +168,21 @@ function NativeBrowserView({
     window.addEventListener('resize', sync)
     return () => {
       dead = true
+      lastVisRef.current = null
       ro.disconnect()
       window.removeEventListener('resize', sync)
       window.api.panes.close(fullId)
     }
-  }, [fullId, ws])
+  }, [fullId, ws, applyVis])
 
-  // Przełączenie karty / workspace / otwarcie overlaya — odśwież widoczność natywnego widoku.
+  // Przełączenie karty / workspace / otwarcie nakładki. Tylko TU liczymy przecięcia
+  // z nakładkami — poza ścieżką ResizeObservera, więc bez ryzyka pętli layoutu.
   useEffect(() => {
-    const r = ref.current?.getBoundingClientRect()
-    const ok = !!r && r.width > 0 && r.height > 0
-    window.api.panes.setVisible(fullId, active && ok && !coveredByUi(r as DOMRect))
-  }, [fullId, active, uiTick])
+    const el = ref.current
+    if (!el) return
+    coveredRef.current = coveredByUi(el.getBoundingClientRect())
+    applyVis()
+  }, [active, uiTick, applyVis])
 
   // Bez display:none dla nieaktywnych: placeholder trzyma prostokąt, dzięki czemu karty
   // w tle też mają natywny widok (ładują się) — są tylko schowane po stronie natywnej.
