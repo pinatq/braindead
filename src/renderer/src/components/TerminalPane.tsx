@@ -219,11 +219,10 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
         return false
       }
 
-      // Poza nawigacją okien vim-mode USTĘPUJE programom pełnoekranowym: nvim, htop i spółka
-      // potrzebują swoich klawiszy (j/k/Esc/v). Stan bierzemy z PTY (zdarzenie pty:alt),
-      // bo bufor xterma po odtworzeniu scrollbacku bywa niewiarygodny.
-      if (isAlt()) return true
-
+      // PRIORYTET APLIKACJI, ciąg dalszy: przełączanie trybu też jest łapane ZAWSZE.
+      // Ustawienie „double-esc" istnieje DOKŁADNIE po to, żeby działać w Neovimie: pierwszy
+      // Esc leci do edytora, drugi (w ciągu 400 ms) przejmuje aplikacja. Trzymanie tego pod
+      // bramką alt-screena zabijało tę opcję właśnie tam, gdzie miała działać.
       // Wyjście INSERT->NORMAL zależne od ustawienia (konflikt z Esc w Neovim itp.).
       if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         // W NORMAL: Esc najpierw zdejmuje zaznaczenie (visual), dopiero potem wraca do INSERT.
@@ -253,6 +252,10 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
         setVim('normal')
         return false
       }
+
+      // W INSERT klawisze należą do programu — także w zwykłym shellu. Dopiero NORMAL oznacza,
+      // że użytkownik świadomie wyszedł z programu i oddał klawiaturę aplikacji, więc od tego
+      // miejsca nie ma już bramki na alt-screen: nad nvimem NORMAL też ma działać.
       // W INSERT piszemy normalnie (przepuszczamy wszystko do PTY).
       if (modeRef.current !== 'normal') return true
 

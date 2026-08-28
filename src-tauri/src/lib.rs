@@ -36,9 +36,13 @@ use tauri_plugin_opener::OpenerExt;
 /// Etykieta webview interfejsu. Jedyny odbiorca zdarzeń aplikacji — patrz zasada 1 wyżej.
 const UI: &str = "ui";
 
-/// Normalny UA Chrome. Bez tego część witryn (YouTube/Google) serwuje połamane zasoby
-/// — port `CHROME_UA` z BrowserPane.tsx w Electronie. Na WebKitGTK to warunek działania.
-const CHROME_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+// UWAGA: NIE podszywamy się pod Chrome'a.
+//
+// Electron ustawiał sztuczny UA Chrome'a, bo sam doklejał do niego "Electron/AppName"
+// i witryny się na tym wykładały. Tauri tego problemu nie ma — WKWebView przedstawia się
+// jako Safari, czyli zgodnie z prawdą. Wmawianie stronom Chrome'a 126 na silniku WebKit
+// sprawia, że serwują bundle i ścieżki kodu pisane pod Blinka, co potrafi je spowolnić
+// albo połamać. Domyślny UA silnika jest tu właściwym wyborem.
 
 fn pane_label(id: &str) -> String {
     format!("pane:{id}")
@@ -118,7 +122,6 @@ fn add_pane(app: AppHandle, id: String, url: String, ws: u32, x: f64, y: f64, w:
             // Port of the Electron <webview> preload: scroll-click/⌘-click opens a tab,
             // app keybinds beat the page, vim-mode keys scroll/hint (browser_script.rs).
             .initialization_script(browser_script::script(&id))
-            .user_agent(CHROME_UA)
             // Cookies/sesje wspólne w obrębie przestrzeni roboczej, odcięte między nimi.
             .data_store_identifier(ws_data_store(ws)),
         LogicalPosition::new(x, y),
