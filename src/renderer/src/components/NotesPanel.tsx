@@ -161,6 +161,43 @@ export default function NotesPanel(): JSX.Element | null {
     setCaretTick((t) => t + 1)
   }
 
+  // Zamknięcie po kliknięciu obok panelu. Notatki to nakładka nad siatką paneli, a bez tego
+  // dało się je zamknąć wyłącznie przyciskiem — w Tauri było to szczególnie dotkliwe, bo
+  // panel przeglądarki pod spodem jest natywnym widokiem i zostaje schowany, dopóki notatki
+  // są otwarte (patrz BrowserPane: nakładki interfejsu leżą POD natywnymi webview).
+  //
+  // `pane:activate` dochodzi ze skryptu wstrzykniętego do stron: klik w treść natywnego
+  // panelu nie generuje żadnego zdarzenia DOM w interfejsie, więc bez tego kliknięcie
+  // w przeglądarkę nie zamykałoby notatek.
+  useEffect(() => {
+    if (!open) return
+    const outside = (t: EventTarget | null): boolean => {
+      const el = t instanceof Node ? (t as HTMLElement) : null
+      if (!el) return true
+      if (panelRef.current?.contains(el)) return false
+      // Klik w przycisk Notes w pasku sam przełącza panel — nie dokładamy drugiego zamknięcia.
+      return !(el instanceof Element && el.closest('[data-notes-toggle]'))
+    }
+    const onDown = (e: MouseEvent): void => {
+      if (outside(e.target)) setNotesOpen(false)
+    }
+    document.addEventListener('mousedown', onDown, true)
+    // ZAMYKAMY, nie przełączamy — i tylko na prawdziwe kliknięcie. `pane:activate` leci też
+    // przy każdym `focus` w stronie (autofocus, iframe'y, skrypty), więc przełącznik podpięty
+    // pod to zdarzenie otwierał i zamykał panel w kółko, zatykając aplikację.
+    const offPane = window.api.panes.onActivate((e) => {
+      if (e.click) setNotesOpen(false)
+    })
+    return () => {
+      document.removeEventListener('mousedown', onDown, true)
+      offPane()
+    }
+  }, [open, setNotesOpen])
+
+  // UWAGA: wszystkie hooki MUSZĄ stać nad tym returnem. Panel renderuje się warunkowo,
+  // więc hook umieszczony niżej wykonuje się tylko przy otwartych notatkach — React widzi
+  // wtedy inną liczbę hooków niż w poprzednim renderze, rzuca „Rendered more hooks than
+  // during the previous render" i odmontowuje CAŁE drzewo. Objaw: okno robi się czarne.
   if (!open) return null
 
   // Ręczna zmiana rozmiaru okienka (uchwyt w rogu) — panel zostaje "nieprzycinający".
@@ -204,38 +241,6 @@ export default function NotesPanel(): JSX.Element | null {
     window.addEventListener('mouseup', onUp)
   }
 
-  // Zamknięcie po kliknięciu obok panelu. Notatki to nakładka nad siatką paneli, a bez tego
-  // dało się je zamknąć wyłącznie przyciskiem — w Tauri było to szczególnie dotkliwe, bo
-  // panel przeglądarki pod spodem jest natywnym widokiem i zostaje schowany, dopóki notatki
-  // są otwarte (patrz BrowserPane: nakładki interfejsu leżą POD natywnymi webview).
-  //
-  // `pane:activate` dochodzi ze skryptu wstrzykniętego do stron: klik w treść natywnego
-  // panelu nie generuje żadnego zdarzenia DOM w interfejsie, więc bez tego kliknięcie
-  // w przeglądarkę nie zamykałoby notatek.
-  useEffect(() => {
-    if (!open) return
-    const outside = (t: EventTarget | null): boolean => {
-      const el = t instanceof Node ? (t as HTMLElement) : null
-      if (!el) return true
-      if (panelRef.current?.contains(el)) return false
-      // Klik w przycisk Notes w pasku sam przełącza panel — nie dokładamy drugiego zamknięcia.
-      return !(el instanceof Element && el.closest('[data-notes-toggle]'))
-    }
-    const onDown = (e: MouseEvent): void => {
-      if (outside(e.target)) setNotesOpen(false)
-    }
-    document.addEventListener('mousedown', onDown, true)
-    // ZAMYKAMY, nie przełączamy — i tylko na prawdziwe kliknięcie. `pane:activate` leci też
-    // przy każdym `focus` w stronie (autofocus, iframe'y, skrypty), więc przełącznik podpięty
-    // pod to zdarzenie otwierał i zamykał panel w kółko, zatykając aplikację.
-    const offPane = window.api.panes.onActivate((e) => {
-      if (e.click) setNotesOpen(false)
-    })
-    return () => {
-      document.removeEventListener('mousedown', onDown, true)
-      offPane()
-    }
-  }, [open, setNotesOpen])
 
   const addFile = async (file: File): Promise<void> => {
     const b64 = await fileToBase64(file)

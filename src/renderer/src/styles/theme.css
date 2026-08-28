@@ -2308,3 +2308,36 @@ kbd {
   font-size: 13px;
   user-select: text;
 }
+
+/* Ekran błędu zamiast czarnego okna (ErrorBoundary). */
+.crash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow: auto;
+  padding: 28px 32px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.crash-screen h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.crash-screen p {
+  margin: 0 0 14px;
+  max-width: 70ch;
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+.crash-screen pre {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}

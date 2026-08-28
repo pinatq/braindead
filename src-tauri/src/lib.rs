@@ -174,6 +174,18 @@ fn pane_eval(app: AppHandle, id: String, js: String) -> Result<(), String> {
     wv.eval(js).map_err(|e| e.to_string())
 }
 
+// ---- Diagnostyka renderera ----
+
+/// Most błędów z webview na stderr procesu. Konsola WKWebView nigdzie nie trafia w buildzie
+/// wydania, więc bez tego błąd renderera jest niewidoczny — a objawia się tylko tym, że okno
+/// robi się czarne (React odmontowuje drzewo, spod spodu widać tło okna).
+/// Uruchom aplikację z terminala, żeby to zobaczyć:
+///   ./src-tauri/target/release/bundle/macos/BrainDead.app/Contents/MacOS/BrainDead
+#[tauri::command]
+fn log_js(level: String, msg: String) {
+    eprintln!("[renderer/{level}] {msg}");
+}
+
 // ---- Terminal (native PTY + batched output) ----
 
 #[tauri::command(async)]
@@ -384,7 +396,7 @@ pub fn run() {
             add_pane, move_pane, close_pane,
             set_pane_visible, pane_navigate, pane_reload, pane_eval,
             pty_spawn, pty_write, pty_resize, pty_kill,
-            store_load, store_save, theme_set_dark,
+            store_load, store_save, theme_set_dark, log_js,
             files::dialog_save_notes, files::file_open, files::file_read, files::file_read_dir,
             files::file_delete, files::file_mkdir, files::file_create, files::file_save,
             files::notes_save_attachment, files::file_read_data_url, files::file_save_as,
