@@ -19,10 +19,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app", "nsis", "appimage", "deb", "rpm"],
+    "targets": [
+      "dmg",
+      "app",
+      "nsis",
+      "appimage",
+      "deb",
+      "rpm"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "Tiling multiplexer of terminals, browsers, viewer and AI CLIs",
-    "longDescription": "Kafelkowy multiplexer terminali, przeglądarek, viewera/eksploratora plików i CLI agentów AI.",
+    "longDescription": "Kafelkowy multiplexer terminali, przegl\u0105darek, viewera/eksploratora plik\u00f3w i CLI agent\u00f3w AI.",
     "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
@@ -31,6 +38,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "linux": { "deb": { "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"] } }
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }

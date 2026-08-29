@@ -6,6 +6,14 @@
 // Importing this module assigns window.api synchronously, before <App/> mounts.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+
+// Błędy komend paneli BYŁY połykane przez puste .catch(() => {}). Wyciszało to prawdziwą
+// przyczynę martwej przeglądarki: jeśli add_pane rzuci, w interfejsie nie widać nic —
+// placeholder stoi, natywnego widoku nie ma, żadnego śladu. Teraz każdy taki błąd ląduje
+// na stderr procesu (komenda log_js), więc widać go po uruchomieniu z terminala.
+const paneErr = (co: string) => (e: unknown): void => {
+  void invoke('log_js', { level: 'pane-error', msg: `${co}: ${String(e)}` }).catch(() => {})
+}
 import type {
   PersistedState,
   PtyEnsureOpts,
@@ -207,23 +215,23 @@ const api = {
     // `ws` = numer przestrzeni roboczej: panele w tej samej przestrzeni dzielą
     // cookies/logowania, różne przestrzenie mają osobne (partycje persist: z Electrona).
     add: (id: string, url: string, ws: number, x: number, y: number, w: number, h: number): Promise<void> =>
-      invoke<void>('add_pane', { id, url, ws, x, y, w, h }).catch(() => {}),
+      invoke<void>('add_pane', { id, url, ws, x, y, w, h }).catch(paneErr(`add_pane ${id} ${url}`)),
     move: (id: string, x: number, y: number, w: number, h: number): Promise<void> =>
-      invoke<void>('move_pane', { id, x, y, w, h }).catch(() => {}),
+      invoke<void>('move_pane', { id, x, y, w, h }).catch(paneErr(`move_pane ${id}`)),
     close: (id: string): void => {
-      void invoke('close_pane', { id }).catch(() => {})
+      void invoke('close_pane', { id }).catch(paneErr('close_pane'))
     },
     setVisible: (id: string, visible: boolean): void => {
-      void invoke('set_pane_visible', { id, visible }).catch(() => {})
+      void invoke('set_pane_visible', { id, visible }).catch(paneErr('set_pane_visible'))
     },
     navigate: (id: string, url: string): void => {
-      void invoke('pane_navigate', { id, url }).catch(() => {})
+      void invoke('pane_navigate', { id, url }).catch(paneErr('pane_navigate'))
     },
     reload: (id: string): void => {
-      void invoke('pane_reload', { id }).catch(() => {})
+      void invoke('pane_reload', { id }).catch(paneErr('pane_reload'))
     },
     eval: (id: string, js: string): void => {
-      void invoke('pane_eval', { id, js }).catch(() => {})
+      void invoke('pane_eval', { id, js }).catch(paneErr('pane_eval'))
     },
     onNavigated: (cb: (e: { id: string; url: string }) => void): (() => void) => {
       paneNavCbs.add(cb)

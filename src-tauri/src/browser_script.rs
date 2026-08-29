@@ -36,12 +36,46 @@ const TEMPLATE: &str = r#"
 (function () {
   // Sygnał do aplikacji: udawana nawigacja na vibecoder:// — on_navigation w Rust ją
   // przechwytuje, emituje event do UI i anuluje (strona zostaje w miejscu).
+  //
+  // UWAGA, TO JEST NIEOCZYWISTE I KOSZTOWAŁO MARTWĄ PRZEGLĄDARKĘ:
+  // ten skrypt startuje na document-start, czyli GDY STRONA SIĘ JESZCZE ŁADUJE. Przypisanie
+  // location.href rozpoczyna nową nawigację, a to PRZERYWA trwające ładowanie — nawet jeśli
+  // Rust ją zaraz anuluje, oryginalne żądanie jest już utracone i dokument zostaje pusty
+  // (bez tytułu, bez treści). Dlatego sygnały wysłane przed zakończeniem ładowania trafiają
+  // do kolejki i lecą dopiero po zdarzeniu `load`.
+  var gotowe = document.readyState === 'complete';
+  var kolejka = [];
+
+  function wyslij(url) {
+    location.href = url;
+  }
+
+  function opróżnijKolejkę() {
+    if (gotowe) return;
+    gotowe = true;
+    var pierwszy = kolejka.shift();
+    kolejka.length = 0; // starsze sygnały są już nieaktualne — interesuje nas ostatni stan
+    if (pierwszy) wyslij(pierwszy);
+  }
+
+  window.addEventListener('load', opróżnijKolejkę);
+  window.addEventListener('DOMContentLoaded', function () {
+    // Część stron nigdy nie kończy `load` (długie zasoby, streaming) — nie blokujmy się w nieskończoność.
+    setTimeout(opróżnijKolejkę, 1500);
+  });
+  setTimeout(opróżnijKolejkę, 8000); // ostateczne zabezpieczenie
+
   function go(cmd, params) {
     var parts = [];
     params = params || {};
     for (var k in params) parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
     parts.push('t=' + Date.now()); // nonce: identyczne komendy pod rząd też nawigują
-    location.href = 'vibecoder://' + cmd + '/?' + parts.join('&');
+    var url = 'vibecoder://' + cmd + '/?' + parts.join('&');
+    if (!gotowe) {
+      kolejka.push(url);
+      return;
+    }
+    wyslij(url);
   }
 
   // ================= Stan z UI (vim/bindy) =================
@@ -51,6 +85,7 @@ const TEMPLATE: &str = r#"
     return { vim: !!s.vim, binds: s.binds || {}, reserved: s.reserved || {} };
   }
   go('vim-hello', {}); // zgłoś się — UI odeśle bieżący stan (port: vim-hello)
+
 
   // ================= Port shared/vimKeys.ts =================
   function matchVimKey(token, e, dbl) {

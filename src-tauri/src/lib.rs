@@ -127,7 +127,10 @@ fn add_pane(app: AppHandle, id: String, url: String, ws: u32, x: f64, y: f64, w:
         LogicalPosition::new(x, y),
         LogicalSize::new(w, h),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        eprintln!("[pane] add_child NIEUDANE dla {label}: {e}");
+        e.to_string()
+    })?;
     Ok(())
 }
 
