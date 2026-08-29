@@ -98,14 +98,15 @@ vim.api.nvim_create_autocmd("BufReadCmd", {
     vim.bo[ev.buf].modifiable = false
     vim.bo[ev.buf].swapfile = false
 
-    if not M.open(ev.file) then
-      return false -- BrainDead nie działa: niech Neovim robi swoje
-    end
+    -- M.open sam spada na systemowe `open`, gdy BrainDead nie działa.
+    M.open(ev.file)
     vim.schedule(function()
       pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
       vim.notify("Otwarte w BrainDeadzie: " .. vim.fn.fnamemodify(ev.file, ":t"))
     end)
-    return true
+    -- CELOWO bez `return true`. W Neovimie zwrócenie true z callbacku autocmd USUWA ten
+    -- autocmd — po pierwszym PDF-ie drugi nie miałby już obsługi i wylądowałby w buforze
+    -- jako binarne śmieci. Sam fakt istnienia BufReadCmd wystarczy, żeby przejąć wczytanie.
   end,
 })
 

@@ -564,9 +564,10 @@ vim.api.nvim_create_autocmd("BufReadCmd", {
     vim.bo[ev.buf].buftype = "nofile"
     vim.bo[ev.buf].modifiable = false
     vim.bo[ev.buf].swapfile = false
-    if not M.open(ev.file) then return false end -- aplikacja nie działa: Neovim robi swoje
+    M.open(ev.file) -- gdy aplikacja nie działa, M.open spada na systemowe `open`
     vim.schedule(function() pcall(vim.api.nvim_buf_delete, ev.buf, { force = true }) end)
-    return true
+    -- CELOWO bez `return true`: w Neovimie zwrócenie true z callbacku USUWA autocmd,
+    -- więc obsłużyłby tylko PIERWSZY plik, a każdy kolejny wpadłby do bufora jako binarka.
   end,
 })
 
