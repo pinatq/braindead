@@ -1,0 +1,58 @@
+#!/bin/sh
+# Sterowanie BrainDeadem z zewnątrz.
+#
+#   braindead open <plik>       — otwiera plik w panelu viewera (dokłada panel, jeśli trzeba)
+#   braindead run  <komenda>    — odpala komendę w NOWEJ przestrzeni roboczej
+#
+# Dwie drogi, wybierane automatycznie:
+#
+#   1. Gniazdo uniksowe — działa z dowolnego procesu na tej maszynie: z Neovide, z osobnego
+#      terminala, ze skryptu. To jest ta droga, której potrzebujesz przy Neovide, bo jego
+#      Neovim nie działa wewnątrz panelu BrainDeada.
+#
+#   2. Sekwencja OSC 7717 wypisana na terminal — gdy gniazda nie ma pod ręką, czyli przede
+#      wszystkim po drugiej stronie ssh. Działa tylko wtedy, gdy program siedzi w panelu
+#      terminala BrainDeada, bo to on czyta ten strumień.
+set -eu
+
+VERB="${1:-}"
+shift 2>/dev/null || true
+ARG="$*"
+
+if [ -z "$VERB" ]; then
+  echo "użycie: braindead open <plik> | braindead run <komenda>" >&2
+  exit 2
+fi
+
+# `open` bez ścieżki bezwzględnej nie ma sensu po drugiej stronie gniazda.
+if [ "$VERB" = "open" ] && [ -n "$ARG" ]; then
+  case "$ARG" in
+    /*) ;;
+    *) ARG="$(cd "$(dirname "$ARG")" && pwd)/$(basename "$ARG")" ;;
+  esac
+fi
+
+for DIR in \
+  "$HOME/Library/Application Support/com.vibecoder.app" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/com.vibecoder.app" \
+  "$HOME/.config/com.vibecoder.app"
+do
+  SOCK="$DIR/braindead.sock"
+  [ -S "$SOCK" ] || continue
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$SOCK" "$VERB" "$ARG" <<'PY'
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(sys.argv[1])
+s.sendall(("%s\t%s\n" % (sys.argv[2], sys.argv[3])).encode())
+s.close()
+PY
+    exit 0
+  elif command -v nc >/dev/null 2>&1; then
+    printf '%s\t%s\n' "$VERB" "$ARG" | nc -U "$SOCK" >/dev/null 2>&1
+    exit 0
+  fi
+done
+
+# Brak gniazda — zostaje kanał terminalowy (działa też przez ssh).
+printf '\033]7717;%s;%s\007' "$VERB" "$ARG"

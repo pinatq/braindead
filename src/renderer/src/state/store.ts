@@ -73,6 +73,7 @@ export interface State {
   winPending: boolean // czeka na drugi klawisz prefiksu Ctrl-w (do statusline)
   activeVimMode: 'insert' | 'normal' // tryb aktywnego terminala (do statusline)
   vimMode: boolean
+  smearCursor: boolean // animowany kursor terminala w stylu Neovide
   vimTermExit: 'esc' | 'double-esc' // jak wyjść z INSERT do NORMAL w terminalu
   forceDark: boolean // wymuszaj dark (prefers-color-scheme) na stronach
   gotoOpen: boolean // czy pokazać pole "skok do workspace" w przełączniku
@@ -145,6 +146,7 @@ export interface State {
   setBind: (actionId: string, combo: string) => void
   resetBinds: () => void
   setVimMode: (v: boolean) => void
+  setSmearCursor: (v: boolean) => void
   setVimBind: (actionId: string, key: string) => void
   resetVimBinds: () => void
   setWinPending: (v: boolean) => void
@@ -209,6 +211,7 @@ function schedulePersist(get: () => State): void {
       binds: s.binds,
       vimBinds: s.vimBinds,
       vimMode: s.vimMode,
+      smearCursor: s.smearCursor,
       vimTermExit: s.vimTermExit,
       ram: s.ram,
       forceDark: s.forceDark,
@@ -244,6 +247,7 @@ export const useStore = create<State>((set, get) => ({
   winPending: false,
   activeVimMode: 'insert',
   vimMode: false,
+  smearCursor: true,
   vimTermExit: 'esc',
   forceDark: false,
   gotoOpen: false,
@@ -364,6 +368,7 @@ export const useStore = create<State>((set, get) => ({
       binds: { ...DEFAULT_BINDS, ...(s.binds ?? {}) },
       vimBinds: { ...DEFAULT_VIM_BINDS, ...(s.vimBinds ?? {}) },
       vimMode: s.vimMode ?? false,
+      smearCursor: s.smearCursor ?? true,
       vimTermExit: s.vimTermExit === 'double-esc' ? 'double-esc' : 'esc', // 'click' (usunięte) -> 'esc'
       forceDark: s.forceDark ?? false,
       autoScrollEnabled: s.autoScrollEnabled ?? false,
@@ -701,6 +706,11 @@ export const useStore = create<State>((set, get) => ({
 
   setVimMode: (v) => {
     set({ vimMode: v })
+    schedulePersist(get)
+  },
+
+  setSmearCursor: (v) => {
+    set({ smearCursor: v })
     schedulePersist(get)
   },
 

@@ -15,6 +15,7 @@
 //    muszą być `(async)`, bo inaczej blokują UI.
 mod agents;
 mod browser_script;
+mod control;
 mod files;
 mod pty;
 mod ram;
@@ -223,7 +224,7 @@ fn default_state() -> Value {
         "notes": "", "notesFiles": [], "current": 1, "maxWorkspace": 1,
         "workspaces": { "1": { "id": 1, "layoutId": "1", "panes": [{ "id": "p1", "mode": "terminal", "dirty": false }], "kept": false } },
         "ecoMode": false, "maxLiveBrowsers": 3, "binds": {}, "vimBinds": {},
-        "vimMode": false, "vimTermExit": "esc",
+        "vimMode": false, "vimTermExit": "esc", "smearCursor": true,
         "ram": { "maxMb": 4096, "enforce": false, "sleepInactive": true, "sleepAfterMin": 5, "minFreeMb": 1024, "minFreeEnforce": false },
         "forceDark": false, "autoScrollEnabled": false, "autoScrollMin": 15, "autoScrollMax": 30,
         "sshConns": [], "autoApproveEnabled": false, "autoApproveMin": 5, "autoApproveMax": 8,
@@ -375,6 +376,7 @@ pub fn run() {
                 LogicalSize::new(1280.0, 800.0),
             )?;
             migrate_from_electron(app.handle());
+            control::start(app.handle().clone());
             ram::start(app.handle().clone());
 
             // Native Edit menu: without one, macOS WKWebView gets no ⌘C/⌘V/⌘X/⌘A
@@ -434,6 +436,7 @@ pub fn run() {
             if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 app.state::<PtyManager>().kill_all();
                 app.state::<SshManager>().disconnect_all();
+                control::cleanup(app);
             }
             // Klik w ikonę w docku przy schowanym oknie — odpowiednik app.on('activate').
             // ponytail: tylko przywracamy istniejące okno; pełne zachowanie Electrona

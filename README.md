@@ -469,6 +469,79 @@ would let any visited page listen to `pty:data`.
 So packaging the repo never leaks notes, files, tokens or browsing history. Irreversible actions (killing a pane/workspace, deleting files, uploading
 a token to a remote host) are **always behind a confirmation**.
 
+### Neovide-style cursor
+
+The terminal cursor glides to its new position and stretches on the way (Neovide calls it
+"cursor smear"). On by default, toggle in **Settings → Vim**.
+
+The animation runs **only** while the cursor is moving — an idle terminal never wakes the
+browser up.
+
+---
+
+## Driving it from outside (Neovim, Neovide, scripts)
+
+BrainDead listens for commands, so other programs can open files in it and run things.
+Put [`scripts/braindead`](scripts/braindead) somewhere on your `PATH`:
+
+```bash
+sudo ln -sf "$PWD/scripts/braindead" /usr/local/bin/braindead
+```
+
+| Command | What it does |
+|---|---|
+| `braindead open <file>` | opens the file in a viewer pane — if the layout has no spare pane it **adds one**, and the pane you are working in is left alone |
+| `braindead run <command>` | switches to a **new workspace** and runs the command in a terminal there |
+
+Two routes, picked automatically:
+
+- a **unix socket** in the app data directory — reachable from **any** process on the machine:
+  Neovide, a separate terminal, a script. This is the route that makes Neovide work, since its
+  Neovim does not run inside a BrainDead pane;
+- an **`OSC 7717` escape sequence** written to the terminal — for when the socket isn't reachable,
+  which in practice means the far side of an `ssh` session. The stream goes through a terminal
+  pane anyway, and the app reads it.
+
+Without the helper, straight from a shell in a pane:
+
+```bash
+printf '\033]7717;open;/path/to/file.pdf\007'
+```
+
+### Neovim config
+
+Works the same in Neovim running inside a BrainDead pane and in standalone Neovide.
+
+```lua
+-- ~/.config/nvim/lua/braindead.lua
+local M = {}
+
+function M.send(verb, arg)
+  vim.system({ 'braindead', verb, arg }, { text = true })
+end
+
+-- Open PDFs, .docx and images in BrainDead instead of Preview/xdg-open.
+-- BufReadCmd takes over the load, so Neovim never tries to read a binary into a buffer.
+vim.api.nvim_create_autocmd('BufReadCmd', {
+  pattern = { '*.pdf', '*.docx', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.svg' },
+  callback = function(ev)
+    M.send('open', vim.fn.fnamemodify(ev.file, ':p'))
+    vim.schedule(function()
+      pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
+    end)
+  end,
+})
+
+-- Instead of splitting the window into a terminal — run it in a new BrainDead workspace.
+vim.keymap.set('n', '<leader>rt', function() M.send('run', 'npm test') end,
+  { desc = 'Tests in a new BrainDead workspace' })
+vim.keymap.set('n', '<leader>rr', function()
+  M.send('run', vim.fn.input('Command: '))
+end, { desc = 'Any command in a new workspace' })
+
+return M
+```
+
 ---
 
 ## Code architecture (data sheet)

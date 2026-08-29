@@ -2349,3 +2349,25 @@ kbd {
   word-break: break-word;
   user-select: text;
 }
+
+/* Kursor w stylu Neovide (lib/smearCursor.ts). `difference` sprawia, że znak pod blokiem
+   pozostaje czytelny — dokładnie jak przy zwykłym kursorze blokowym w terminalu. */
+.smear-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: var(--accent);
+  border-radius: 2px;
+  mix-blend-mode: difference;
+  will-change: transform, width, height;
+}
+.smear-cursor--blur {
+  opacity: 0.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .smear-cursor {
+    transition: none;
+  }
+}

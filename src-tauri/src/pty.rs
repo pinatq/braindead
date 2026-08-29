@@ -64,6 +64,74 @@ fn rfind(hay: &[u8], needle: &[u8]) -> Option<usize> {
     (0..=hay.len() - needle.len()).rev().find(|&i| &hay[i..i + needle.len()] == needle)
 }
 
+/// Prefiks sekwencji sterującej, którą programy w terminalu wysyłają DO aplikacji.
+/// Wzorzec znany z iTerm2/kitty: skoro program pisze do PTY, a aplikacja ten strumień
+/// i tak czyta, to najprostszy kanał sterowania nie wymaga ani gniazda, ani portu —
+/// i przechodzi przez ssh razem z resztą wyjścia.
+///
+///   printf '\033]7717;open;/sciezka/plik.pdf\007'
+///
+const OSC_PREFIX: &[u8] = b"\x1b]7717;";
+/// Górny limit ładunku — sekwencja bez terminatora nie może rosnąć w nieskończoność.
+const OSC_MAX: usize = 4096;
+
+/// Wyławia sekwencje OSC 7717 ze strumienia bajtów. Działa bajt po bajcie, więc sekwencja
+/// rozcięta między odczytami z PTY składa się poprawnie.
+#[derive(Default)]
+pub struct OscScanner {
+    /// Ile bajtów prefiksu już pasuje (0 = nie jesteśmy w środku dopasowania).
+    dopasowano: usize,
+    /// Zbierany ładunek — Some dopiero po pełnym prefiksie.
+    ladunek: Option<Vec<u8>>,
+    /// Poprzedni bajt to ESC — kandydat na terminator ST (ESC \).
+    esc: bool,
+}
+
+impl OscScanner {
+    /// Zwraca komplet znalezionych par (czasownik, argument).
+    pub fn feed(&mut self, data: &[u8]) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for &b in data {
+            if let Some(buf) = self.ladunek.as_mut() {
+                // Terminator: BEL albo ST (ESC \).
+                if b == 0x07 || (self.esc && b == b'\\') {
+                    if self.esc {
+                        buf.pop(); // ESC trafiło do bufora w poprzednim obrocie
+                    }
+                    let tekst = String::from_utf8_lossy(buf).into_owned();
+                    if let Some((czasownik, arg)) = tekst.split_once(';') {
+                        out.push((czasownik.to_string(), arg.to_string()));
+                    } else if !tekst.is_empty() {
+                        out.push((tekst, String::new()));
+                    }
+                    self.ladunek = None;
+                    self.esc = false;
+                    continue;
+                }
+                self.esc = b == 0x1b;
+                buf.push(b);
+                if buf.len() > OSC_MAX {
+                    self.ladunek = None; // brak terminatora — porzucamy
+                    self.esc = false;
+                }
+                continue;
+            }
+            // Dopasowywanie prefiksu.
+            if b == OSC_PREFIX[self.dopasowano] {
+                self.dopasowano += 1;
+                if self.dopasowano == OSC_PREFIX.len() {
+                    self.dopasowano = 0;
+                    self.ladunek = Some(Vec::new());
+                }
+            } else {
+                // Nietrafiony bajt może sam zaczynać nowy prefiks (np. dwa ESC pod rząd).
+                self.dopasowano = usize::from(b == OSC_PREFIX[0]);
+            }
+        }
+        out
+    }
+}
+
 /// Bufor scalający wyjście PTY + sygnał dla wątku flushującego.
 #[derive(Default)]
 struct Outbox {
@@ -211,12 +279,20 @@ impl PtyManager {
             std::thread::spawn(move || {
                 let mut chunk = [0u8; 8192];
                 let mut tail: Vec<u8> = Vec::with_capacity(SEQ_TAIL + 8192);
+                let mut osc = OscScanner::default();
                 loop {
                     let n = match reader.read(&mut chunk) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => n,
                     };
                     let data = &chunk[..n];
+
+                    // Sterowanie aplikacją z wnętrza terminala (Neovim, skrypty, ssh).
+                    for (czasownik, arg) in osc.feed(data) {
+                        let _ = app.emit_to(UI, "app:command", serde_json::json!({
+                            "source": "pty", "pane": id, "verb": czasownik, "arg": arg
+                        }));
+                    }
 
                     // Alt-screen: skanujemy ogon + nową porcję, żeby nie zgubić sekwencji
                     // rozciętej między odczytami.
@@ -466,6 +542,43 @@ mod tests {
         assert_eq!(alt_from_chunk(b"\x1b[?1047h"), Some(true));
         assert_eq!(alt_from_chunk(b"\x1b[?47l"), Some(false));
         assert_eq!(alt_from_chunk(b"zwykle wyjscie bez sekwencji"), None);
+    }
+
+    #[test]
+    fn osc_wylapuje_komende() {
+        let mut sc = super::OscScanner::default();
+        let out = sc.feed(b"tekst\x1b]7717;open;/tmp/a.pdf\x07reszta");
+        assert_eq!(out, vec![("open".into(), "/tmp/a.pdf".to_string())]);
+    }
+
+    #[test]
+    fn osc_rozciety_miedzy_odczytami() {
+        let mut sc = super::OscScanner::default();
+        assert!(sc.feed(b"aaa\x1b]77").is_empty());
+        assert!(sc.feed(b"17;run;npm ").is_empty());
+        assert_eq!(sc.feed(b"test\x07"), vec![("run".into(), "npm test".to_string())]);
+    }
+
+    #[test]
+    fn osc_terminator_st_tez_dziala() {
+        let mut sc = super::OscScanner::default();
+        assert_eq!(sc.feed(b"\x1b]7717;open;/x\x1b\\"), vec![("open".into(), "/x".to_string())]);
+    }
+
+    #[test]
+    fn osc_ignoruje_zwykle_wyjscie_i_inne_osc() {
+        let mut sc = super::OscScanner::default();
+        assert!(sc.feed(b"zwykly tekst\x1b]0;tytul okna\x07wiecej").is_empty());
+    }
+
+    #[test]
+    fn osc_porzuca_sekwencje_bez_terminatora() {
+        let mut sc = super::OscScanner::default();
+        let smiec = vec![b'x'; super::OSC_MAX + 10];
+        sc.feed(b"\x1b]7717;open;");
+        assert!(sc.feed(&smiec).is_empty());
+        // po porzuceniu skaner dziala dalej
+        assert_eq!(sc.feed(b"\x1b]7717;run;ls\x07"), vec![("run".into(), "ls".to_string())]);
     }
 
     #[test]

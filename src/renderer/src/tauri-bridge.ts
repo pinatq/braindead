@@ -37,6 +37,10 @@ const altCbs = new Set<(e: PtyAltEvent) => void>()
 const ramCbs = new Set<(s: RamStats) => void>()
 const sshProgCbs = new Set<(e: { profileId: string; stage: string }) => void>()
 const paneMediaCbs = new Set<(e: { id: string; on: boolean }) => void>()
+// Komendy z zewnątrz: gniazdo uniksowe (Neovide, skrypty) i OSC 7717 z panelu terminala.
+interface AppCommand { source: string; verb: string; arg: string; pane?: string }
+const appCmdCbs = new Set<(e: AppCommand) => void>()
+void listen<AppCommand>('app:command', (e) => appCmdCbs.forEach((cb) => cb(e.payload)))
 // Native browser-pane events (multiwebview). id = full native id `${paneId}:${tabId}`.
 const paneNavCbs = new Set<(e: { id: string; url: string }) => void>()
 const paneTitleCbs = new Set<(e: { id: string; title: string }) => void>()
@@ -201,6 +205,11 @@ const api = {
       ramCbs.add(cb)
       return () => void ramCbs.delete(cb)
     }
+  },
+  // Sterowanie aplikacją spoza interfejsu — patrz src-tauri/src/control.rs.
+  onAppCommand: (cb: (e: AppCommand) => void): (() => void) => {
+    appCmdCbs.add(cb)
+    return () => void appCmdCbs.delete(cb)
   },
   theme: {
     setForceDark: (on: boolean): void => {

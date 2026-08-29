@@ -469,6 +469,79 @@ obejmowała całe okno, dowolna odwiedzona strona mogłaby nasłuchiwać `pty:da
 Dzięki temu spakowanie repo nie ujawnia notatek, plików, tokenów ani historii przeglądania. Operacje nieodwracalne (ubicie panelu/przestrzeni, usuwanie plików,
 wysłanie tokenu na zdalny host) są **zawsze za potwierdzeniem**.
 
+### Kursor w stylu Neovide
+
+Kursor terminala płynie do nowej pozycji, rozciągając się po drodze (Neovide nazywa to
+„cursor smear"). Włączony domyślnie, przełącznik w **Ustawienia → Vim**.
+
+Animacja chodzi **wyłącznie** w trakcie ruchu kursora — terminal, w którym nic się nie dzieje,
+nie budzi przeglądarki ani razu.
+
+---
+
+## Sterowanie z zewnątrz (Neovim, Neovide, skrypty)
+
+BrainDead nasłuchuje komend, więc inne programy mogą otwierać w nim pliki i odpalać
+polecenia. Narzędzie [`scripts/braindead`](scripts/braindead) wrzuć gdzieś na `PATH`:
+
+```bash
+sudo ln -sf "$PWD/scripts/braindead" /usr/local/bin/braindead
+```
+
+| Komenda | Działanie |
+|---|---|
+| `braindead open <plik>` | otwiera plik w panelu viewera — jeśli w układzie nie ma wolnego panelu, **dokłada nowy**, a ten, w którym pracujesz, zostaje nietknięty |
+| `braindead run <komenda>` | przełącza na **nową przestrzeń roboczą** i uruchamia tam komendę w terminalu |
+
+Działa dwiema drogami, wybieranymi automatycznie:
+
+- **gniazdo uniksowe** w katalogu danych aplikacji — działa z **dowolnego** procesu na tej
+  maszynie: z Neovide, z osobnego terminala, ze skryptu. To jest ta droga, która obsługuje
+  Neovide, bo jego Neovim nie działa wewnątrz panelu BrainDeada;
+- **sekwencja `OSC 7717`** wypisana na terminal — gdy gniazda nie ma pod ręką, czyli przede
+  wszystkim po drugiej stronie `ssh`. Wtedy strumień i tak przechodzi przez panel terminala,
+  a aplikacja go czyta.
+
+Bez narzędzia, prosto z powłoki w panelu:
+
+```bash
+printf '\033]7717;open;/sciezka/do/pliku.pdf\007'
+```
+
+### Konfiguracja Neovima
+
+Działa tak samo w Neovimie odpalonym w panelu BrainDeada i w samodzielnym Neovide.
+
+```lua
+-- ~/.config/nvim/lua/braindead.lua
+local M = {}
+
+function M.send(verb, arg)
+  vim.system({ 'braindead', verb, arg }, { text = true })
+end
+
+-- PDF-y, .docx i obrazki otwieraj w BrainDeadzie zamiast w Preview/xdg-open.
+-- BufReadCmd przejmuje otwarcie, więc Neovim nie próbuje wczytać binarki do bufora.
+vim.api.nvim_create_autocmd('BufReadCmd', {
+  pattern = { '*.pdf', '*.docx', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.svg' },
+  callback = function(ev)
+    M.send('open', vim.fn.fnamemodify(ev.file, ':p'))
+    vim.schedule(function()
+      pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
+    end)
+  end,
+})
+
+-- Zamiast dzielić okno na terminal — odpal w nowej przestrzeni BrainDeada.
+vim.keymap.set('n', '<leader>rt', function() M.send('run', 'npm test') end,
+  { desc = 'Testy w nowej przestrzeni BrainDeada' })
+vim.keymap.set('n', '<leader>rr', function()
+  M.send('run', vim.fn.input('Komenda: '))
+end, { desc = 'Dowolna komenda w nowej przestrzeni' })
+
+return M
+```
+
 ---
 
 ## Architektura kodu (data sheet)

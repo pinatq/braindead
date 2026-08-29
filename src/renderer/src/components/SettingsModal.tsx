@@ -419,6 +419,8 @@ export default function SettingsModal(): JSX.Element | null {
   const setBind = useStore((s) => s.setBind)
   const resetBinds = useStore((s) => s.resetBinds)
   const vimMode = useStore((s) => s.vimMode)
+  const smearCursor = useStore((s) => s.smearCursor)
+  const setSmearCursor = useStore((s) => s.setSmearCursor)
   const setVimMode = useStore((s) => s.setVimMode)
   const vimTermExit = useStore((s) => s.vimTermExit)
   const setVimTermExit = useStore((s) => s.setVimTermExit)
@@ -572,6 +574,21 @@ export default function SettingsModal(): JSX.Element | null {
 
           {tab === 'vim' && (
             <>
+              <label className="setting-row setting-row--toggle">
+                <span>
+                  <b>Neovide-style cursor</b>
+                  <span className="setting-sub">
+                    The terminal cursor glides to its new position and stretches on the way.
+                    Costs nothing when idle — the animation only runs while the cursor moves.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={smearCursor}
+                  onChange={(e) => setSmearCursor(e.target.checked)}
+                />
+              </label>
+
               <label className="setting-row setting-row--toggle">
                 <span>
                   <b>Vim mode</b>

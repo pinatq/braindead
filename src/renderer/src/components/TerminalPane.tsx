@@ -8,6 +8,7 @@ import { useStore } from '../state/store'
 import { matchVimKey, isDoubleFirst, WIN_MOTION_IDS, type DoubleState } from '../../../shared/vimKeys'
 import { armWinPending, clearWinPending, runWindowMotion } from '../shortcuts/dispatch'
 import { FIND_EVENT, type FindDetail } from '../shortcuts/find'
+import { installSmearCursor } from '../lib/smearCursor'
 
 interface Props {
   paneId: string
@@ -36,6 +37,9 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
   const ptyId = ptyKey ?? paneId
   const hostRef = useRef<HTMLDivElement>(null)
   const ecoMode = useStore((s) => s.ecoMode)
+  const smearCursor = useStore((s) => s.smearCursor)
+  // Rośnie po utworzeniu instancji xterma — pozwala podpiąć efekty bez odtwarzania terminala.
+  const [termTick, setTermTick] = useState(0)
   const vimMode = useStore((s) => s.vimMode)
   const vimTermExit = useStore((s) => s.vimTermExit)
   const vimBinds = useStore((s) => s.vimBinds)
@@ -112,6 +116,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     term.loadAddon(new WebLinksAddon())
     term.open(host)
     termRef.current = term
+    setTermTick((t) => t + 1)
 
     const isAlt = (): boolean => altRef.current || term.buffer.active.type === 'alternate'
     const toInsert = (): void => setVim('insert') // setVim sam przewija na dół i ustawia fokus
@@ -369,7 +374,11 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
         /* kontener może mieć chwilowo rozmiar 0 */
       }
     }
-    doFit()
+    // Pierwsze dopasowanie DOPIERO w następnej klatce. Wywołane synchronicznie zaraz po
+    // term.open() trafia w moment, gdy renderer xterma jeszcze nie istnieje: fit zmienia
+    // liczbę kolumn, xterm planuje sobie syncScrollArea, a ten sięga po `_renderer.value`
+    // i wywala się na undefined. Rzut jest asynchroniczny, więc try/catch wokół fit go nie łapie.
+    const pierwszyFit = requestAnimationFrame(doFit)
 
     // Subskrybujemy dane PTY ZANIM wywołamy ensure — main odsyła pełny bufor (replay)
     // dopiero po naszej subskrypcji, więc nie zgubimy historii.
@@ -421,6 +430,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
 
     return () => {
       // Tylko czyścimy widok — NIE killujemy PTY (może działać w tle).
+      cancelAnimationFrame(pierwszyFit)
       offData()
       offAlt()
       onInput.dispose()
@@ -431,6 +441,15 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
       termRef.current = null
     }
   }, [paneId, ecoMode, markPaneDirty, setPanePty])
+
+  // Kursor w stylu Neovide. Osobny efekt na poziomie komponentu — dzięki temu przełącznik
+  // w ustawieniach nie odtwarza całego terminala (a z nim żywej sesji PTY).
+  useEffect(() => {
+    const term = termRef.current
+    const host = hostRef.current
+    if (!smearCursor || !term || !host) return
+    return installSmearCursor(term, host)
+  }, [smearCursor, termTick])
 
   // Gdy ten panel staje się aktywny (np. po skrócie ⌘N), przejmij fokus klawiatury —
   // inaczej pisanie trafiałoby wciąż do poprzedniego terminala.

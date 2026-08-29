@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { shallow } from 'zustand/shallow'
 import { useStore } from './state/store'
 import { useShortcuts } from './shortcuts/useShortcuts'
+import { installAppCommands } from './lib/appCommands'
 import Toolbar from './components/Toolbar'
 import PaneGrid from './components/PaneGrid'
 import NotesPanel from './components/NotesPanel'
@@ -38,6 +39,9 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.api.theme.setForceDark(forceDark)
   }, [forceDark])
+
+  // Komendy z zewnątrz: `braindead open <plik>` / `braindead run <komenda>`.
+  useEffect(() => installAppCommands(), [])
 
   // Globalne skróty klawiszowe (panele, MRU, przestrzenie).
   useShortcuts()
