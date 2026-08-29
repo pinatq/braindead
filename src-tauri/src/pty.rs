@@ -97,7 +97,15 @@ pub fn login_shell() -> String {
             return s;
         }
     }
-    if std::path::Path::new("/bin/zsh").exists() { "/bin/zsh".into() } else { "/bin/bash".into() }
+    // Na Windowsie nie ma ani passwd, ani $SHELL — port zachowania z pty.ts Electrona.
+    #[cfg(windows)]
+    {
+        return "powershell.exe".into();
+    }
+    #[cfg(not(windows))]
+    {
+        if std::path::Path::new("/bin/zsh").exists() { "/bin/zsh".into() } else { "/bin/bash".into() }
+    }
 }
 
 // PtyEnsureOpts.agent from src/shared/types.ts (camelCase on the wire).

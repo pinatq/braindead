@@ -28,9 +28,11 @@ use ssh::SshManager;
 use tauri::{
     menu::{Menu, PredefinedMenuItem, Submenu},
     webview::{NewWindowResponse, WebviewBuilder},
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, RunEvent, State, TitleBarStyle,
-    WebviewUrl, WindowBuilder,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, RunEvent, State, WebviewUrl,
+    WindowBuilder,
 };
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
 use tauri_plugin_opener::OpenerExt;
 
 /// Etykieta webview interfejsu. Jedyny odbiorca zdarzeń aplikacji — patrz zasada 1 wyżej.
@@ -238,13 +240,18 @@ fn state_file(app: &AppHandle) -> Result<PathBuf, String> {
 /// nazwa z package.json — "vibe-coder"). Tauri używa identyfikatora bundla, więc bez
 /// migracji użytkownik po przesiadce traci przestrzenie, notatki i tokeny agentów.
 fn electron_data_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    #[cfg(target_os = "macos")]
-    return home.map(|h| h.join("Library/Application Support/vibe-coder"));
     #[cfg(target_os = "windows")]
-    return std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("vibe-coder"));
+    {
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("vibe-coder"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/vibe-coder"))
+    }
     #[cfg(all(unix, not(target_os = "macos")))]
-    return home.map(|h| h.join(".config/vibe-coder"));
+    {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/vibe-coder"))
+    }
 }
 
 fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
@@ -335,15 +342,24 @@ pub fn run() {
         .setup(|app| {
             // macOS window mirroring Electron's titleBarStyle 'hiddenInset' + transparent bg
             // (rounded-corner support); #0e0f13 is the app bg, used as the fallback color.
-            let win = WindowBuilder::new(app, "main")
+            #[allow(unused_mut)]
+            let mut builder = WindowBuilder::new(app, "main")
                 .title("BrainDead")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(800.0, 500.0)
-                .transparent(true)
-                .title_bar_style(TitleBarStyle::Overlay)
-                .hidden_title(true)
-                .background_color(tauri::utils::config::Color(14, 15, 19, 255))
-                .build()?;
+                .background_color(tauri::utils::config::Color(14, 15, 19, 255));
+            // Wpuszczony pasek tytułu + przezroczyste okno (zaokrąglone rogi) TYLKO na macOS —
+            // dokładnie jak w Electronie, gdzie było `titleBarStyle: darwin ? 'hiddenInset' : 'default'`.
+            // Te metody nie istnieją na innych platformach (kod się tam nie kompiluje), a przezroczyste
+            // okno na Linuksie wymaga kompozytora i bez niego potrafi wyjść czarne.
+            #[cfg(target_os = "macos")]
+            {
+                builder = builder
+                    .transparent(true)
+                    .title_bar_style(TitleBarStyle::Overlay)
+                    .hidden_title(true);
+            }
+            let win = builder.build()?;
             win.add_child(
                 // transparent => the window bg shows through where the UI is translucent
                 // (gated behind the `macos-private-api` feature on macOS — enabled in Cargo.toml).
