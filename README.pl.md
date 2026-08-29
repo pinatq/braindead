@@ -510,37 +510,70 @@ printf '\033]7717;open;/sciezka/do/pliku.pdf\007'
 
 ### Konfiguracja Neovima
 
-Działa tak samo w Neovimie odpalonym w panelu BrainDeada i w samodzielnym Neovide.
+Rozmawiamy z aplikacją **bezpośrednio z Lua** przez gniazdo (`vim.uv`), bez wołania czegokolwiek
+z `PATH`. To istotne: Neovide odpalone z Docka dostaje okrojony `PATH` i droga przez zewnętrzny
+program potrafi po cichu nie zadziałać.
+
+Wrzuć plik jako `~/.config/nvim/lua/config/braindead.lua`, a w `init.lua` **dodaj wywołanie** —
+sam plik w `lua/` się nie ładuje:
 
 ```lua
--- ~/.config/nvim/lua/braindead.lua
+require("config.braindead")
+```
+
+```lua
+-- ~/.config/nvim/lua/config/braindead.lua
+local uv = vim.uv or vim.loop
 local M = {}
 
-function M.send(verb, arg)
-  vim.system({ 'braindead', verb, arg }, { text = true })
+local KANDYDACI = {
+  "~/Library/Application Support/com.vibecoder.app/braindead.sock",
+  "~/.local/share/com.vibecoder.app/braindead.sock",
+}
+
+function M.gniazdo()
+  for _, p in ipairs(KANDYDACI) do
+    local s = vim.fn.expand(p)
+    if vim.fn.getftype(s) == "socket" then return s end
+  end
 end
 
--- PDF-y, .docx i obrazki otwieraj w BrainDeadzie zamiast w Preview/xdg-open.
--- BufReadCmd przejmuje otwarcie, więc Neovim nie próbuje wczytać binarki do bufora.
-vim.api.nvim_create_autocmd('BufReadCmd', {
-  pattern = { '*.pdf', '*.docx', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.svg' },
+--- Zwraca false, gdy BrainDead nie działa — wtedy NIE przejmujemy akcji.
+function M.send(verb, arg)
+  local s = M.gniazdo()
+  if not s then return false end
+  local pipe = uv.new_pipe(false)
+  pipe:connect(s, function(err)
+    if err then pipe:close() return end
+    pipe:write(verb .. "\t" .. (arg or "") .. "\n", function() pipe:close() end)
+  end)
+  return true
+end
+
+function M.open(p) return M.send("open", vim.fn.fnamemodify(p, ":p")) end
+function M.run(c) return c ~= "" and M.send("run", c) end
+
+-- PDF-y, .docx i obrazki otwieraj w BrainDeadzie zamiast w Preview.
+-- BufReadCmd przejmuje wczytanie, więc binarka nie ląduje w buforze.
+vim.api.nvim_create_autocmd("BufReadCmd", {
+  group = vim.api.nvim_create_augroup("BrainDeadOpen", { clear = true }),
+  pattern = { "*.pdf", "*.docx", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg" },
   callback = function(ev)
-    M.send('open', vim.fn.fnamemodify(ev.file, ':p'))
-    vim.schedule(function()
-      pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
-    end)
+    if not M.open(ev.file) then return false end -- aplikacja nie działa: Neovim robi swoje
+    vim.schedule(function() pcall(vim.api.nvim_buf_delete, ev.buf, { force = true }) end)
+    return true
   end,
 })
 
--- Zamiast dzielić okno na terminal — odpal w nowej przestrzeni BrainDeada.
-vim.keymap.set('n', '<leader>rt', function() M.send('run', 'npm test') end,
-  { desc = 'Testy w nowej przestrzeni BrainDeada' })
-vim.keymap.set('n', '<leader>rr', function()
-  M.send('run', vim.fn.input('Komenda: '))
-end, { desc = 'Dowolna komenda w nowej przestrzeni' })
+-- Zamiast splita z terminalem — nowa przestrzeń w BrainDeadzie.
+vim.keymap.set("n", "<leader>br", function() M.run(vim.fn.input("Komenda: ")) end)
+vim.keymap.set("n", "<leader>bo", function() M.open(vim.fn.expand("%:p")) end)
 
 return M
 ```
+
+Do tego komenda `:BrainDead run npm test` i `:BrainDead open ~/plik.pdf` — pełna wersja modułu
+jest w repo pod [`scripts/braindead.lua`](scripts/braindead.lua).
 
 ---
 

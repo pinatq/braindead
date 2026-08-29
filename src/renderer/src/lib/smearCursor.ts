@@ -7,10 +7,11 @@
 // przeglądarki ani razu.
 import type { Terminal } from '@xterm/xterm'
 
-/** Jak szybko blok dogania cel (0..1 na klatkę). Wyżej = sztywniej, niżej = bardziej leniwie. */
-const DOGANIANIE = 0.32
+/// Czas dojazdu do celu w milisekundach. Neovide domyślnie animuje ~60 ms — przy dłuższym
+/// czasie kursor wlecze się za pisaniem i przeszkadza, zamiast wyglądać.
+const CZAS_MS = 55
 /** Poniżej tylu pikseli różnicy uznajemy, że dojechał — i zatrzymujemy pętlę. */
-const PRZYCIAGANIE = 0.6
+const PRZYCIAGANIE = 0.75
 
 interface Komorka {
   w: number
@@ -33,6 +34,7 @@ export function installSmearCursor(term: Terminal, host: HTMLElement): () => voi
   let y = 0
   let klatka = 0
   let zywy = true
+  let ostatniaKlatka = 0
 
   /** Rozmiar komórki i przesunięcie warstwy tekstu względem hosta — liczone z DOM-u. */
   const zmierz = (): Komorka | null => {
@@ -68,27 +70,34 @@ export function installSmearCursor(term: Terminal, host: HTMLElement): () => voi
     el.style.height = `${h}px`
   }
 
-  const krok = (): void => {
+  const krok = (teraz: number): void => {
     klatka = 0
     if (!zywy) return
     const t = cel()
     if (!t) return
+    // Krok zależny od czasu, nie od liczby klatek: na 120 Hz kursor nie może dojeżdżać
+    // dwa razy szybciej niż na 60 Hz.
+    const dt = ostatniaKlatka ? Math.min(64, teraz - ostatniaKlatka) : 16
+    ostatniaKlatka = teraz
+    const k = Math.min(1, dt / CZAS_MS)
     const dx = t.x - x
     const dy = t.y - y
     if (Math.abs(dx) < PRZYCIAGANIE && Math.abs(dy) < PRZYCIAGANIE) {
       x = t.x
       y = t.y
+      ostatniaKlatka = 0
       rysuj(x, y) // dojechał — blok wraca do rozmiaru jednej komórki
       return
     }
-    x += dx * DOGANIANIE
-    y += dy * DOGANIANIE
+    x += dx * k
+    y += dy * k
     rysuj(t.x, t.y)
     klatka = requestAnimationFrame(krok)
   }
 
   const obudz = (): void => {
     if (!zywy || klatka) return
+    ostatniaKlatka = 0
     klatka = requestAnimationFrame(krok)
   }
 

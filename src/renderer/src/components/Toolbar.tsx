@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useStore } from '../state/store'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import TermBrowserSwitch from './TermBrowserSwitch'
@@ -42,7 +43,21 @@ export default function Toolbar(): JSX.Element {
   return (
     // data-tauri-drag-region="deep": puste obszary toolbara ciągną okno (ukryty pasek tytułu),
     // przyciski/inputy i tak blokują drag wg skryptu Tauri.
-    <div className="toolbar" data-tauri-drag-region="deep">
+    // Dwuklik w pusty obszar paska maksymalizuje okno — tak samo jak dwuklik w pasek tytułu
+    // w każdej innej aplikacji. Sprawdzamy `currentTarget === target`, żeby dwuklik w przycisk
+    // albo w przełącznik przestrzeni nie rozciągał okna przy okazji.
+    <div
+      className="toolbar"
+      data-tauri-drag-region="deep"
+      onDoubleClick={(e) => {
+        // Wszędzie na pasku POZA kontrolkami — inaczej dwuklik w przycisk przy okazji
+        // rozciągałby okno.
+        const el = e.target as HTMLElement
+        if (!el.closest('button, input, select, a, [role="button"], [data-tip]')) {
+          void getCurrentWindow().toggleMaximize()
+        }
+      }}
+    >
       <div className="toolbar-left">
         <button
           // Znacznik dla NotesPanel: klik w ten przycisk to przełączenie, nie „klik obok"
