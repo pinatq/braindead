@@ -44,9 +44,29 @@ function M.send(verb, arg)
   return true
 end
 
---- Otwiera plik w viewerze BrainDeada.
+--- Otwiera plik w viewerze BrainDeada. Gdy aplikacja nie działa — systemowe `open`,
+--- żeby usunięcie starego autocmd z options.lua nie zostawiło Cię z binarnymi śmieciami.
 function M.open(sciezka)
-  return M.send("open", vim.fn.fnamemodify(sciezka, ":p"))
+  local pelna = vim.fn.fnamemodify(sciezka, ":p")
+  if M.send("open", pelna) then
+    return true
+  end
+  vim.fn.jobstart({ "open", pelna }, { detach = true })
+  return true
+end
+
+--- Jak `run`, ale najpierw wchodzi do katalogu — przycisk ▶ odpala program tam, gdzie leży
+--- plik, a nie w losowym cwd Neovima. Zwraca false, gdy aplikacja nie działa (wtedy woła
+--- się zapasowy split w options.lua).
+function M.run_in(komenda, katalog)
+  if komenda == nil or komenda == "" then
+    return false
+  end
+  local pelna = komenda
+  if katalog and katalog ~= "" then
+    pelna = "cd " .. vim.fn.shellescape(katalog) .. " && " .. komenda
+  end
+  return M.send("run", pelna)
 end
 
 --- Odpala komendę w NOWEJ przestrzeni roboczej BrainDeada (zamiast splita z terminalem).

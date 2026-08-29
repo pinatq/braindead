@@ -61,16 +61,21 @@ function poczekajNaPty(paneId: string, ms = 4000): Promise<string | null> {
   })
 }
 
-/** Pierwszy wolny numer przestrzeni — nowa strona zamiast dzielenia bieżącej. */
+/**
+ * Numer przestrzeni dla `run`. NIGDY nie zwraca bieżącej — o to chodzi w „osobnej karcie":
+ * komenda ma wylądować obok tego, nad czym pracujesz, a nie pod tym samym numerem.
+ */
 function wolnaPrzestrzen(): number {
   const st = useStore.getState()
   for (let n = 1; n <= 16; n++) {
+    if (n === st.current) continue
     const w = st.workspaces[n]
     // Wolna = nie istnieje albo ma jeden dziewiczy terminal.
     if (!w) return n
     if (w.panes.length === 1 && w.panes[0].mode === 'terminal' && !w.panes[0].dirty) return n
   }
-  return Math.min(16, st.maxWorkspace + 1)
+  // Wszystkie zajęte — bierzemy pierwszą inną niż bieżąca.
+  return st.current === 1 ? 2 : 1
 }
 
 async function odpalWNowejPrzestrzeni(komenda: string): Promise<void> {
