@@ -387,6 +387,14 @@ button:disabled {
   background: #c084fc;
   color: #1a0a25;
 }
+.vim-mode--explorer {
+  background: #fbbf24;
+  color: #241a02;
+}
+.vim-mode--agent {
+  background: #34d399;
+  color: #04231a;
+}
 .vim-seg {
   color: var(--fg);
 }

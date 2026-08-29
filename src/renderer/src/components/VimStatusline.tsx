@@ -31,6 +31,14 @@ export default function VimStatusline(): JSX.Element | null {
   } else if (pane?.mode === 'viewer') {
     modeLabel = 'VIEWER'
     modeCls = 'viewer'
+  } else if (pane?.mode === 'explorer') {
+    // Bez tego eksplorator i panel agenta wypadały na domyślne „—": pasek stanu wyglądał,
+    // jakby przestał reagować na zmianę panelu, mimo że tryby mają własną obsługę klawiszy.
+    modeLabel = 'EXPLORER'
+    modeCls = 'explorer'
+  } else if (pane?.mode === 'claude') {
+    modeLabel = 'AGENT'
+    modeCls = 'agent'
   }
 
   return (
