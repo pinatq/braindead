@@ -89,6 +89,15 @@ vim.api.nvim_create_autocmd("BufReadCmd", {
   group = grupa,
   pattern = { "*.pdf", "*.docx", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp", "*.svg" },
   callback = function(ev)
+    -- KRYTYCZNE, i to nie teoria — na tym straciłem już jeden plik.
+    -- BufReadCmd przejmuje wczytanie, więc bufor zostaje PUSTY. Twój auto-save
+    -- (InsertLeave/TextChanged/BufLeave/FocusLost w config/options.lua) zapisuje bufory
+    -- z buftype == "" i modifiable == true — czyli zapisałby ten pusty bufor NA PLIK
+    -- i wyzerował go. Te trzy linie muszą zostać przed czymkolwiek innym.
+    vim.bo[ev.buf].buftype = "nofile"
+    vim.bo[ev.buf].modifiable = false
+    vim.bo[ev.buf].swapfile = false
+
     if not M.open(ev.file) then
       return false -- BrainDead nie działa: niech Neovim robi swoje
     end

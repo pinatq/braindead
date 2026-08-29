@@ -559,6 +559,11 @@ vim.api.nvim_create_autocmd("BufReadCmd", {
   group = vim.api.nvim_create_augroup("BrainDeadOpen", { clear = true }),
   pattern = { "*.pdf", "*.docx", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg" },
   callback = function(ev)
+    -- KRYTYCZNE: BufReadCmd zostawia bufor PUSTY. Jeśli masz auto-save na BufLeave/FocusLost,
+    -- zapisze on ten pusty bufor NA PLIK i go wyzeruje. Te trzy linie muszą być pierwsze.
+    vim.bo[ev.buf].buftype = "nofile"
+    vim.bo[ev.buf].modifiable = false
+    vim.bo[ev.buf].swapfile = false
     if not M.open(ev.file) then return false end -- aplikacja nie działa: Neovim robi swoje
     vim.schedule(function() pcall(vim.api.nvim_buf_delete, ev.buf, { force = true }) end)
     return true
