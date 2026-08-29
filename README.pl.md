@@ -30,22 +30,19 @@ Kliknij swoją platformę i zainstaluj jak każdą inną aplikację.
 
 | Platforma | Pobierz | Instalacja |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead-0.0.2-arm64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-arm64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **macOS — Intel** (x86_64) | [BrainDead-0.0.2-x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **Windows 10/11** (x64) | [BrainDead-0.0.2-x64.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x64.exe) | uruchom instalator, wybierz folder, dalej → dalej |
-| **Linux — AppImage** (każda dystrybucja) | [BrainDead-0.0.2-x86_64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead-0.0.2-x86_64.AppImage) | `chmod +x BrainDead-*.AppImage && ./BrainDead-*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.0_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_aarch64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **macOS — Intel** (x86_64) | [BrainDead_0.1.0_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **Windows 10/11** (x64) | [BrainDead_0.1.0_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64-setup.exe) | uruchom instalator, wybierz folder, dalej → dalej |
+| **Linux — AppImage** (każda dystrybucja) | [BrainDead_0.1.0_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
 
 ### Linux — przez menedżer pakietów
 
 ```bash
-# Arch / Manjaro
-sudo pacman -U BrainDead-0.0.2-x64.pacman
-
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead-0.0.2-amd64.deb      # albo:  sudo dpkg -i BrainDead-0.0.2-amd64.deb
+sudo apt install ./BrainDead_0.1.0_amd64.deb      # albo:  sudo dpkg -i BrainDead_0.1.0_amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.0.2-x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.0.2-x86_64.rpm
+sudo dnf install ./BrainDead-0.1.0-1.x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.1.0-1.x86_64.rpm
 ```
 
 > **Uwaga macOS** — build **nie jest** podpisany Developer ID (tylko podpis ad-hoc). Przy pierwszym
@@ -75,7 +72,7 @@ starym — Twoje dane zostają (siedzą w systemowym folderze danych aplikacji, 
 
 - **macOS** — otwórz nowy `.dmg`, przeciągnij **BrainDead.app** do Aplikacji, zastąp stary.
 - **Windows** — uruchom nowy instalator; podmienia istniejącą instalację w miejscu.
-- **Linux** — przeinstaluj pakiet (`sudo pacman -U …` / `sudo apt install ./…deb` / `sudo dnf install
+- **Linux** — przeinstaluj pakiet (`sudo apt install ./…deb` / `sudo dnf install
   ./…rpm`), albo po prostu podmień plik `.AppImage`.
 
 Notatki, układy, przestrzenie, skróty, połączenia SSH i konta agentów przeżywają aktualizację — nic z
