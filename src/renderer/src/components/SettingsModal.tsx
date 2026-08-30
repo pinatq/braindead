@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import { useStore } from '../state/store'
+import { useStore, DEFAULT_CURSOR_COLOR } from '../state/store'
 import {
   BIND_ACTIONS,
   comboFromEvent,
@@ -421,6 +421,8 @@ export default function SettingsModal(): JSX.Element | null {
   const vimMode = useStore((s) => s.vimMode)
   const smearCursor = useStore((s) => s.smearCursor)
   const setSmearCursor = useStore((s) => s.setSmearCursor)
+  const cursorColor = useStore((s) => s.cursorColor)
+  const setCursorColor = useStore((s) => s.setCursorColor)
   const setVimMode = useStore((s) => s.setVimMode)
   const vimTermExit = useStore((s) => s.vimTermExit)
   const setVimTermExit = useStore((s) => s.setVimTermExit)
@@ -587,6 +589,25 @@ export default function SettingsModal(): JSX.Element | null {
                   checked={smearCursor}
                   onChange={(e) => setSmearCursor(e.target.checked)}
                 />
+              </label>
+
+              <label className="setting-row setting-row--toggle">
+                <span>
+                  <b>Cursor color</b>
+                  <span className="setting-sub">
+                    Terminal cursor color — the animated block and xterm&apos;s own cursor alike.
+                  </span>
+                </span>
+                <span className="cursor-color">
+                  <input
+                    type="color"
+                    value={cursorColor}
+                    onChange={(e) => setCursorColor(e.target.value)}
+                  />
+                  <button className="bind-key" onClick={() => setCursorColor(DEFAULT_CURSOR_COLOR)}>
+                    Reset
+                  </button>
+                </span>
               </label>
 
               <label className="setting-row setting-row--toggle">

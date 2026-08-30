@@ -14,6 +14,9 @@ import type {
 } from '../../../shared/types'
 import type { AgentToolId } from '../../../shared/agents'
 
+/** Kolor kursora terminala — ten sam odcień, który wcześniej był zaszyty w motywie xterma. */
+export const DEFAULT_CURSOR_COLOR = '#3b82f6'
+
 // Domyślne ustawienia RAM (zgodne z DEFAULT_STATE w mainie).
 const DEFAULT_RAM: RamSettings = {
   maxMb: 4096,
@@ -74,6 +77,7 @@ export interface State {
   activeVimMode: 'insert' | 'normal' // tryb aktywnego terminala (do statusline)
   vimMode: boolean
   smearCursor: boolean // animowany kursor terminala w stylu Neovide
+  cursorColor: string // kolor kursora terminala (hex)
   vimTermExit: 'esc' | 'double-esc' // jak wyjść z INSERT do NORMAL w terminalu
   forceDark: boolean // wymuszaj dark (prefers-color-scheme) na stronach
   gotoOpen: boolean // czy pokazać pole "skok do workspace" w przełączniku
@@ -147,6 +151,7 @@ export interface State {
   resetBinds: () => void
   setVimMode: (v: boolean) => void
   setSmearCursor: (v: boolean) => void
+  setCursorColor: (v: string) => void
   setVimBind: (actionId: string, key: string) => void
   resetVimBinds: () => void
   setWinPending: (v: boolean) => void
@@ -212,6 +217,7 @@ function schedulePersist(get: () => State): void {
       vimBinds: s.vimBinds,
       vimMode: s.vimMode,
       smearCursor: s.smearCursor,
+      cursorColor: s.cursorColor,
       vimTermExit: s.vimTermExit,
       ram: s.ram,
       forceDark: s.forceDark,
@@ -248,6 +254,7 @@ export const useStore = create<State>((set, get) => ({
   activeVimMode: 'insert',
   vimMode: false,
   smearCursor: true,
+  cursorColor: DEFAULT_CURSOR_COLOR,
   vimTermExit: 'esc',
   forceDark: false,
   gotoOpen: false,
@@ -369,6 +376,7 @@ export const useStore = create<State>((set, get) => ({
       vimBinds: { ...DEFAULT_VIM_BINDS, ...(s.vimBinds ?? {}) },
       vimMode: s.vimMode ?? false,
       smearCursor: s.smearCursor ?? true,
+      cursorColor: s.cursorColor ?? DEFAULT_CURSOR_COLOR,
       vimTermExit: s.vimTermExit === 'double-esc' ? 'double-esc' : 'esc', // 'click' (usunięte) -> 'esc'
       forceDark: s.forceDark ?? false,
       autoScrollEnabled: s.autoScrollEnabled ?? false,
@@ -711,6 +719,11 @@ export const useStore = create<State>((set, get) => ({
 
   setSmearCursor: (v) => {
     set({ smearCursor: v })
+    schedulePersist(get)
+  },
+
+  setCursorColor: (v) => {
+    set({ cursorColor: v })
     schedulePersist(get)
   },
 

@@ -38,6 +38,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
   const hostRef = useRef<HTMLDivElement>(null)
   const ecoMode = useStore((s) => s.ecoMode)
   const smearCursor = useStore((s) => s.smearCursor)
+  const cursorColor = useStore((s) => s.cursorColor)
   // Rośnie po utworzeniu instancji xterma — pozwala podpiąć efekty bez odtwarzania terminala.
   const [termTick, setTermTick] = useState(0)
   const vimMode = useStore((s) => s.vimMode)
@@ -107,7 +108,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
       theme: {
         background: '#0e0f13',
         foreground: '#d6d9df',
-        cursor: '#3b82f6',
+        cursor: cursorColor,
         selectionBackground: '#264f78'
       }
     })
@@ -441,6 +442,14 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
       termRef.current = null
     }
   }, [paneId, ecoMode, markPaneDirty, setPanePty])
+
+  // Kolor kursora: xterm rysuje swój z motywu, nasz blok „smear" bierze zmienną CSS z hosta.
+  useEffect(() => {
+    hostRef.current?.style.setProperty('--cursor-color', cursorColor)
+    const term = termRef.current
+    // Przy włączonym smearze xterm ma kursor przezroczysty (inaczej rysowałby się drugi).
+    if (term && !smearCursor) term.options.theme = { ...term.options.theme, cursor: cursorColor }
+  }, [cursorColor, termTick, smearCursor])
 
   // Kursor w stylu Neovide. Osobny efekt na poziomie komponentu — dzięki temu przełącznik
   // w ustawieniach nie odtwarza całego terminala (a z nim żywej sesji PTY).

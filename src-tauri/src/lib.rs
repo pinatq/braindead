@@ -224,7 +224,7 @@ fn default_state() -> Value {
         "notes": "", "notesFiles": [], "current": 1, "maxWorkspace": 1,
         "workspaces": { "1": { "id": 1, "layoutId": "1", "panes": [{ "id": "p1", "mode": "terminal", "dirty": false }], "kept": false } },
         "ecoMode": false, "maxLiveBrowsers": 3, "binds": {}, "vimBinds": {},
-        "vimMode": false, "vimTermExit": "esc", "smearCursor": true,
+        "vimMode": false, "vimTermExit": "esc", "smearCursor": true, "cursorColor": "#3b82f6",
         "ram": { "maxMb": 4096, "enforce": false, "sleepInactive": true, "sleepAfterMin": 5, "minFreeMb": 1024, "minFreeEnforce": false },
         "forceDark": false, "autoScrollEnabled": false, "autoScrollMin": 15, "autoScrollMax": 30,
         "sshConns": [], "autoApproveEnabled": false, "autoApproveMin": 5, "autoApproveMax": 8,

@@ -1521,6 +1521,22 @@ button:disabled {
   align-items: flex-start;
 }
 
+/* Wybór koloru kursora: natywny input[type=color] + reset obok. */
+.cursor-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cursor-color input[type='color'] {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 .setting-sub {
   display: block;
   color: var(--fg-dim);
@@ -2358,7 +2374,7 @@ kbd {
   left: 0;
   z-index: 4;
   pointer-events: none;
-  background: var(--accent);
+  background: var(--cursor-color, var(--accent));
   border-radius: 2px;
   mix-blend-mode: difference;
   will-change: transform, width, height;

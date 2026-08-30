@@ -93,6 +93,7 @@ export interface PersistedState {
   vimBinds: Record<string, string> // vimActionId -> klawisz vima ('' = wyłączony)
   vimMode: boolean
   smearCursor: boolean
+  cursorColor: string // kolor kursora terminala (hex)
   vimTermExit: 'esc' | 'double-esc' // jak wyjść z INSERT do NORMAL w terminalu
   ram: RamSettings
   forceDark: boolean // wymuszaj prefers-color-scheme: dark na stronach
