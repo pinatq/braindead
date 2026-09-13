@@ -8,7 +8,6 @@ import Toolbar from './components/Toolbar'
 import PaneGrid from './components/PaneGrid'
 import NotesPanel from './components/NotesPanel'
 import SettingsModal from './components/SettingsModal'
-import VimStatusline from './components/VimStatusline'
 import FindBar from './components/FindBar'
 
 export default function App(): JSX.Element {
@@ -54,7 +53,6 @@ export default function App(): JSX.Element {
           <PaneGrid key={id} workspaceId={id} visible={id === current} />
         ))}
       </div>
-      <VimStatusline />
       <FindBar />
       <NotesPanel />
       <SettingsModal />

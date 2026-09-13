@@ -351,21 +351,7 @@ button:disabled {
   background: var(--bg);
 }
 
-/* ---------- Statusline vima (na dole) ---------- */
-.vim-statusline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-  height: 22px;
-  padding: 0 8px;
-  background: var(--bg-2);
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--fg-dim);
-  user-select: none;
-}
+/* ---------- Znacznik trybu vima (NotesPanel) ---------- */
 .vim-mode {
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -378,41 +364,6 @@ button:disabled {
 }
 .vim-mode--insert {
   background: #fb923c;
-}
-.vim-mode--browser {
-  background: #60a5fa;
-  color: #06101f;
-}
-.vim-mode--viewer {
-  background: #c084fc;
-  color: #1a0a25;
-}
-.vim-mode--explorer {
-  background: #fbbf24;
-  color: #241a02;
-}
-.vim-mode--agent {
-  background: #34d399;
-  color: #04231a;
-}
-.vim-seg {
-  color: var(--fg);
-}
-.vim-seg--dim {
-  color: var(--fg-dim);
-}
-.vim-seg--auto {
-  color: #f0a3a3;
-  font-weight: 700;
-}
-.vim-spacer {
-  flex: 1;
-}
-.vim-status-hint {
-  color: var(--accent);
-}
-.vim-status-hint--dim {
-  opacity: 0.8;
 }
 
 .pane-grid {
