@@ -27,6 +27,10 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let mut sys = System::new();
         let own = Pid::from_u32(std::process::id());
+        // ponytail: mapa i stos zyja poza petla — .clear() zachowuje pojemnosc, wiec tick
+        // nie alokuje od zera Vec-a na kazdego rodzica w systemie.
+        let mut children_of: HashMap<Pid, Vec<Pid>> = HashMap::new();
+        let mut stack: Vec<Pid> = Vec::new();
         loop {
             sys.refresh_memory();
             // Potrzebujemy wyłącznie memory + parent, żeby zsumować własne drzewo procesów.
@@ -36,14 +40,15 @@ pub fn start(app: AppHandle) {
                 ProcessRefreshKind::nothing().with_memory(),
             );
             // Sum our process tree: BFS over parent links (app + child webviews/agents).
-            let mut children_of: HashMap<Pid, Vec<Pid>> = HashMap::new();
+            children_of.values_mut().for_each(Vec::clear);
             for (pid, proc_) in sys.processes() {
                 if let Some(parent) = proc_.parent() {
                     children_of.entry(parent).or_default().push(*pid);
                 }
             }
             let mut app_bytes = 0u64;
-            let mut stack = vec![own];
+            stack.clear();
+            stack.push(own);
             while let Some(pid) = stack.pop() {
                 if let Some(proc_) = sys.process(pid) {
                     app_bytes += proc_.memory();
