@@ -24,23 +24,25 @@ xterm.js; browser: the system's native webview; PDF: pdf.js).
 
 ## ⬇️ Download
 
+Current version: **0.1.3**. [Changelog](CHANGELOG.md).
+
 Click your platform, then install as usual.
 
 | Platform | Download | Install |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.0_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_aarch64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
-| **macOS — Intel** (x86_64) | [BrainDead_0.1.0_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
-| **Windows 10/11** (x64) | [BrainDead_0.1.0_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64-setup.exe) | run the installer, pick a folder, next → next |
-| **Linux — AppImage** (any distro) | [BrainDead_0.1.0_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.3_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_aarch64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
+| **macOS — Intel** (x86_64) | [BrainDead_0.1.3_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
+| **Windows 10/11** (x64) | [BrainDead_0.1.3_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64-setup.exe) | run the installer, pick a folder, next → next |
+| **Linux — AppImage** (any distro) | [BrainDead_0.1.3_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
 
 ### Linux — via your package manager
 
 ```bash
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead_0.1.0_amd64.deb      # or:  sudo dpkg -i BrainDead_0.1.0_amd64.deb
+sudo apt install ./BrainDead_0.1.3_amd64.deb      # or:  sudo dpkg -i BrainDead_0.1.3_amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.1.0-1.x86_64.rpm   # or:  sudo rpm -i BrainDead-0.1.0-1.x86_64.rpm
+sudo dnf install ./BrainDead-0.1.3-1.x86_64.rpm   # or:  sudo rpm -i BrainDead-0.1.3-1.x86_64.rpm
 ```
 
 > **macOS note** — the build is **not** signed with a Developer ID (ad-hoc signature only). On first
@@ -188,6 +190,9 @@ Previews files opened from the explorer (locally or over SFTP):
 - **PDF via pdf.js** — crisp zoom, fit-to-width, **selectable text** (text layer).
 - **.docx** (docx-preview).
 - **Text / Markdown** — with **editing and saving** (writes locally, or over SFTP to a remote host).
+  For `.md` / `.markdown`, **Preview** shows formatted headings, lists, tables, quotes and code;
+  **Source** returns to editing without losing unsaved changes. Find and vim copy-mode work in the preview.
+  The document fills the panel width and reflows when the panel is maximized or resized.
 - **Copy mode** (PDF/docx): a vim-like caret — `v` shows the cursor, `v` selects, `y` copies; in vim
   mode you steer with `hjkl`, zoom `+`/`-`/`0`.
 - Find ⌘F works here too (PDF/docx/text).
@@ -618,13 +623,18 @@ src/
     vimKeys.ts     vim action defs + matchVimKey/captureVimKey
 ```
 
-Self-checks live next to the code they guard: `cargo test` runs the alternate-screen tracking
-assertions (`src/pty.rs`) and the natural-sort assertions (`src/files.rs`).
+Self-checks live next to the code they guard: `cargo test` runs the alternate-screen tracking,
+lossless output flow-control assertions (`src/pty.rs`) and natural-sort assertions (`src/files.rs`).
+`node scripts/pty-flow-check.mjs` checks parsing acknowledgements, replay and terminal unmount/remount.
 
 
 Renderer ↔ main talk only over **IPC** (channels collected in `IPC` in
 [types.ts](src/shared/types.ts)) and the safe `window.api` bridge from preload. zustand holds the UI state
 and persists it to `state.json` with debounce.
+
+Live terminal output has a 256 KiB per-session limit across the Rust queue and unacknowledged
+bytes sent to xterm. A full queue pauses PTY reads until xterm has parsed the data; no live bytes
+are discarded. History replay uses the existing separate scrollback buffer.
 
 ---
 
@@ -636,7 +646,9 @@ and persists it to `state.json` with debounce.
 | `npm run build` | frontend bundle into `dist/` (`tsc` + Vite) |
 | `npm run tauri build` | full installer into `src-tauri/target/release/bundle/` |
 | `npx tsc --noEmit` | type-check the frontend |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | self-checks: alternate-screen tracking (what vim mode rides on) and natural sort |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | self-checks: flow control, alternate-screen tracking and natural sort |
+| `node scripts/pty-flow-check.mjs` | frontend PTY acknowledgements and view lifecycle checks |
+| `node scripts/markdown-viewer-check.mjs` | Markdown preview, draft preservation, save, vim and safety checks in Chrome (`CHROME_BIN` overrides its path) |
 | `npx tauri icon <png>` | regenerates every icon size from one source PNG |
 
 Tauri cannot cross-compile the webview, so each OS builds on its own machine —

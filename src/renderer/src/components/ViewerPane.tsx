@@ -9,6 +9,7 @@ import { createDomFinder, findInTextarea, type DomFinder } from '../lib/domFind'
 // takiego pliku. Wcześniej siedziały w głównym bundlu, który każdy start aplikacji musiał
 // sparsować — a większość sesji nigdy nie otwiera PDF-a ani .docx.
 const PdfView = lazy(() => import('./PdfView'))
+const MarkdownView = lazy(() => import('./MarkdownView'))
 
 interface Props {
   paneId: string
@@ -81,6 +82,7 @@ function caretToStart(el: HTMLElement): void {
 export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX.Element {
   const [content, setContent] = useState<Content | null>(null)
   const [text, setText] = useState('')
+  const [markdownPreview, setMarkdownPreview] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   // Tryb kopiowania (pdf/docx): w „view" klawisze scrollują/zoomują, w „copy" treść jest zaznaczalna
   // myszką i `y` kopiuje zaznaczenie do schowka. Włączany tylko w vim mode (poza nim treść jest
@@ -93,6 +95,8 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
   const docxRef = useRef<HTMLDivElement>(null) // wewnętrzna treść docx (skalowana zoomem)
   const docxScrollRef = useRef<HTMLDivElement>(null) // zewnętrzny kontener scrolla (bez zoomu)
   const textRef = useRef<HTMLTextAreaElement>(null) // do scrolla i wykrycia trybu edycji
+  const markdownRef = useRef<HTMLDivElement>(null)
+  const markdownScrollRef = useRef<HTMLDivElement>(null)
   const pdfScrollRef = useRef<HTMLDivElement>(null) // kontener scrolla PDF (pdf.js)
   const pdfInnerRef = useRef<HTMLDivElement>(null) // wewnętrzna treść PDF (contentEditable w trybie copy)
   const paneRef = useRef<HTMLDivElement>(null) // korzeń panelu (kotwica dla własnej karetki)
@@ -103,12 +107,13 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
   const winPendingRef = useRef(false)
   const winTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dblRef = useRef<DoubleState>({ key: '', time: 0 })
-  // Finder DOM (pdf/docx) — korzeń wybierany w locie wg rodzaju treści.
+  const copyRoot = useCallback((): HTMLElement | null => {
+    const k = contentRef.current?.kind
+    return k === 'docx' ? docxRef.current : k === 'pdf' ? pdfInnerRef.current : markdownRef.current
+  }, [])
+  // Finder DOM (PDF/docx/Markdown) — ten sam tekst co w trybie kopiowania.
   const finderRef = useRef<DomFinder>(
-    createDomFinder(() => {
-      const k = contentRef.current?.kind
-      return k === 'docx' ? docxRef.current : k === 'pdf' ? pdfInnerRef.current : null
-    })
+    createDomFinder(copyRoot)
   )
   copyModeRef.current = copyMode
   visualRef.current = visual
@@ -143,6 +148,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
     setPan({ x: 0, y: 0 })
     setCopyMode(false)
     setVisual(false)
+    setMarkdownPreview(false)
     if (IMAGE_EXTS.includes(ext)) {
       const url = URL.createObjectURL(new Blob([buf]))
       urlRef.current = url
@@ -235,7 +241,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
         finderRef.current.clear()
         return
       }
-      if (k === 'text') {
+      if (k === 'text' && !markdownRef.current) {
         const ta = textRef.current
         if (!ta) return
         const backwards = d.type === 'prev'
@@ -244,7 +250,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
         findInTextarea(ta, d.query, from, backwards)
         return
       }
-      if (k === 'pdf' || k === 'docx') {
+      if (copyRoot()) {
         if (d.type === 'query') finderRef.current.search(d.query)
         else if (d.type === 'next') finderRef.current.next()
         else finderRef.current.prev()
@@ -252,19 +258,19 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
     }
     window.addEventListener(FIND_EVENT, onFind)
     return () => window.removeEventListener(FIND_EVENT, onFind)
-  }, [paneId])
+  }, [paneId, copyRoot])
 
   // Zmiana treści (nowy plik) — czyścimy podświetlenia wyszukiwania poprzedniego dokumentu.
   useEffect(() => {
     finderRef.current.clear()
-  }, [content])
+  }, [content, markdownPreview])
 
   // Tryb COPY: treść (docx lub wewn. PDF) robimy contentEditable → prawdziwa migająca karetka na
   // pierwszej literce, strzałki/Shift+strzałki/⌘A/h-j-k-l i mysz. Canvasy PDF są `contenteditable=false`
   // + `user-select:none`, więc karetka je pomija, a zaznaczenie nie łapie „pustych stron". Faktyczną
   // edycję blokuje osobny `beforeinput` (niżej).
   useEffect(() => {
-    const el = content?.kind === 'docx' ? docxRef.current : content?.kind === 'pdf' ? pdfInnerRef.current : null
+    const el = copyRoot()
     if (!el) return
     if (copyMode) {
       el.setAttribute('contenteditable', 'true')
@@ -276,7 +282,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
       if (el.contains(document.activeElement)) el.blur()
       window.getSelection()?.removeAllRanges()
     }
-  }, [copyMode, content])
+  }, [copyMode, content, markdownPreview, copyRoot])
 
   // Zoom PDF kółkiem z Ctrl/⌘ (oraz gestem pinch na trackpadzie — wysyła ctrl+wheel).
   useEffect(() => {
@@ -324,7 +330,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
     const reposition = (): void => positionCaret()
     document.addEventListener('selectionchange', reposition)
     const sc =
-      content?.kind === 'pdf' ? pdfScrollRef.current : content?.kind === 'docx' ? docxScrollRef.current : null
+      content?.kind === 'pdf' ? pdfScrollRef.current : content?.kind === 'docx' ? docxScrollRef.current : markdownScrollRef.current
     sc?.addEventListener('scroll', reposition, { passive: true })
     window.addEventListener('resize', reposition)
     const raf = requestAnimationFrame(reposition)
@@ -334,7 +340,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
       sc?.removeEventListener('scroll', reposition)
       window.removeEventListener('resize', reposition)
     }
-  }, [copyMode, content, positionCaret])
+  }, [copyMode, content, markdownPreview, positionCaret])
 
   // Wyjście z trybu COPY, gdy panel przestaje być aktywny lub otwierają się notatki — inaczej
   // contentEditable viewera „trzymałby" fokus/edycję i nie dało się wkleić do notatek.
@@ -350,12 +356,12 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
   useEffect(() => {
     const block = (e: Event): void => {
       if (!copyModeRef.current) return
-      const el = contentRef.current?.kind === 'docx' ? docxRef.current : pdfInnerRef.current
+      const el = copyRoot()
       if (el && e.target instanceof Node && el.contains(e.target)) e.preventDefault()
     }
     window.addEventListener('beforeinput', block, true)
     return () => window.removeEventListener('beforeinput', block, true)
-  }, [paneId])
+  }, [paneId, copyRoot])
 
   // Plik podany z zewnątrz (eksplorator) — wczytaj do viewera (lokalnie albo zdalnie przez SFTP).
   useEffect(() => {
@@ -385,7 +391,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
             : k === 'docx'
               ? docxScrollRef.current
               : k === 'text'
-                ? textRef.current
+                ? textRef.current ?? markdownScrollRef.current
                 : null
         const dir = e.key === 'd' ? 0.5 : -0.5
         if (tgt) tgt.scrollTop += dir * tgt.clientHeight
@@ -397,8 +403,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
 
       // Tryb COPY (pdf/docx): treść jest contentEditable → mamy prawdziwą karetkę.
       // Obsługujemy tu y/Esc/V/ruch ZANIM zadziała ogólny bail na polach edytowalnych.
-      const cc = contentRef.current
-      if (copyModeRef.current && (cc?.kind === 'pdf' || cc?.kind === 'docx')) {
+      if (copyModeRef.current && copyRoot()) {
         const d2 = dblRef.current
         const sel = window.getSelection() as
           | (Selection & { modify?: (alter: string, direction: string, granularity: string) => void })
@@ -495,7 +500,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
       const dbl = dblRef.current
       const target =
         c?.kind === 'text'
-          ? textRef.current
+          ? textRef.current ?? markdownScrollRef.current
           : c?.kind === 'docx'
             ? docxScrollRef.current
             : c?.kind === 'pdf'
@@ -517,7 +522,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
 
       // Wejście w tryb COPY (pdf/docx). Pierwsze v = karetka + ruch (bez zaznaczania); kolejne v
       // przełącza zaznaczanie (visual). Dalszą obsługę robi blok „copy ON" na górze handlera.
-      if ((c?.kind === 'pdf' || c?.kind === 'docx') && matchVimKey(vb['viewer.copy'], e, dbl)) {
+      if (copyRoot() && matchVimKey(vb['viewer.copy'], e, dbl)) {
         setCopyMode(true)
         setVisual(false)
         showFlash('COPY — caret on · h/j/k/l moves · press v again to select · y yank · Esc exit')
@@ -551,7 +556,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [paneId])
+  }, [paneId, copyRoot])
 
   // Drag & drop (plik z systemu lub obraz przeciągnięty z Notes)
   const onDrop = (e: React.DragEvent): void => {
@@ -634,7 +639,7 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
           <span className="viewer-name" title={content.name}>
             {content.name}
           </span>
-          {vimMode && (content.kind === 'pdf' || content.kind === 'docx') && (
+          {vimMode && (content.kind === 'pdf' || content.kind === 'docx' || markdownPreview) && (
             <span
               className={'viewer-mode' + (copyMode ? ' viewer-mode--copy' : '')}
               data-tip={
@@ -645,6 +650,20 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
             >
               {copyMode ? (visual ? 'VISUAL' : 'COPY') : 'VIEW'}
             </span>
+          )}
+          {content.kind === 'text' && ['md', 'markdown'].includes(extOf(content.name)) && (
+            <button
+              className={'icon-btn' + (markdownPreview ? ' icon-btn--on' : '')}
+              aria-pressed={markdownPreview}
+              title={markdownPreview ? 'Edit Markdown source' : 'Show formatted Markdown'}
+              onClick={() => {
+                setCopyMode(false)
+                setVisual(false)
+                setMarkdownPreview((v) => !v)
+              }}
+            >
+              {markdownPreview ? 'Source' : 'Preview'}
+            </button>
           )}
           {content.kind === 'text' && content.path && (
             <button className="icon-btn" data-tip="Save" onClick={saveText}>
@@ -697,11 +716,22 @@ export default function ViewerPane({ paneId, filePath, remoteConn }: Props): JSX
         </div>
       )}
 
-      {content?.kind === 'text' && (
+      {content?.kind === 'text' && markdownPreview && (
+        <div className="viewer-markdown-scroll" ref={markdownScrollRef}>
+          <div style={{ zoom }}>
+            <Suspense fallback={<div className="viewer-empty">Loading Markdown preview…</div>}>
+              <MarkdownView text={text} innerRef={markdownRef} />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
+      {content?.kind === 'text' && !markdownPreview && (
         <textarea
           ref={textRef}
           className="viewer-text"
           value={text}
+          aria-label={content.name}
           spellCheck={false}
           onChange={(e) => setText(e.target.value)}
         />

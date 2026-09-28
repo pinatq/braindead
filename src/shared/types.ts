@@ -120,7 +120,8 @@ export interface PtyEnsureOpts {
 
 export interface PtyDataEvent {
   id: string
-  data: string
+  data: Uint8Array
+  acknowledge: () => void
 }
 
 // Wejście/wyjście programu pełnoekranowego (alternate screen) w danej sesji PTY.

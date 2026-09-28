@@ -208,6 +208,11 @@ fn pty_write(mgr: State<PtyManager>, id: String, data: String) {
 }
 
 #[tauri::command]
+fn pty_ack(mgr: State<PtyManager>, id: String, generation: u32, end: u64) {
+    mgr.acknowledge(&id, generation, end);
+}
+
+#[tauri::command]
 fn pty_resize(mgr: State<PtyManager>, id: String, cols: u16, rows: u16) {
     mgr.resize(&id, cols, rows);
 }
@@ -361,12 +366,20 @@ pub fn run() {
                     .hidden_title(true);
             }
             let win = builder.build()?;
+            let link_app = app.handle().clone();
             win.add_child(
                 // transparent => the window bg shows through where the UI is translucent
                 // (gated behind the `macos-private-api` feature on macOS — enabled in Cargo.toml).
                 // auto_resize => the UI webview follows window resizes (was stuck at 1280x800).
                 WebviewBuilder::new("ui", WebviewUrl::App("index.html".into()))
                     .transparent(true)
+                    .on_new_window(move |url, _features| {
+                        // Link z podglądu Markdown nie zastępuje interfejsu aplikacji.
+                        if matches!(url.scheme(), "https" | "http" | "mailto") {
+                            let _ = link_app.opener().open_url(url.as_str(), None::<&str>);
+                        }
+                        NewWindowResponse::Deny
+                    })
                     // Tauri domyślnie przechwytuje upuszczenie pliku z systemu i zamienia je
                     // na własne zdarzenie — DOM nigdy nie dostaje `drop`, więc przeciąganie
                     // plików do notatek nie działało. Wyłączamy, żeby działało HTML5 DnD.
@@ -419,7 +432,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             add_pane, move_pane, close_pane,
             set_pane_visible, pane_navigate, pane_reload, pane_eval,
-            pty_spawn, pty_write, pty_resize, pty_kill,
+            pty_spawn, pty_write, pty_ack, pty_resize, pty_kill,
             store_load, store_save, theme_set_dark, log_js,
             files::dialog_save_notes, files::file_open, files::file_read, files::file_read_dir,
             files::file_delete, files::file_mkdir, files::file_create, files::file_save,

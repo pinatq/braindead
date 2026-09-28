@@ -26,23 +26,25 @@ w Ruście + xterm.js, przeglądarka: natywne webview systemu, PDF: pdf.js).
 
 ## ⬇️ Pobieranie
 
+Aktualna wersja: **0.1.3**. [Historia zmian](CHANGELOG.md).
+
 Kliknij swoją platformę i zainstaluj jak każdą inną aplikację.
 
 | Platforma | Pobierz | Instalacja |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.0_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_aarch64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **macOS — Intel** (x86_64) | [BrainDead_0.1.0_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **Windows 10/11** (x64) | [BrainDead_0.1.0_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_x64-setup.exe) | uruchom instalator, wybierz folder, dalej → dalej |
-| **Linux — AppImage** (każda dystrybucja) | [BrainDead_0.1.0_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.0_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.3_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_aarch64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **macOS — Intel** (x86_64) | [BrainDead_0.1.3_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **Windows 10/11** (x64) | [BrainDead_0.1.3_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64-setup.exe) | uruchom instalator, wybierz folder, dalej → dalej |
+| **Linux — AppImage** (każda dystrybucja) | [BrainDead_0.1.3_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
 
 ### Linux — przez menedżer pakietów
 
 ```bash
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead_0.1.0_amd64.deb      # albo:  sudo dpkg -i BrainDead_0.1.0_amd64.deb
+sudo apt install ./BrainDead_0.1.3_amd64.deb      # albo:  sudo dpkg -i BrainDead_0.1.3_amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.1.0-1.x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.1.0-1.x86_64.rpm
+sudo dnf install ./BrainDead-0.1.3-1.x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.1.3-1.x86_64.rpm
 ```
 
 > **Uwaga macOS** — build **nie jest** podpisany Developer ID (tylko podpis ad-hoc). Przy pierwszym
@@ -189,6 +191,9 @@ Podgląd plików otwartych z eksploratora (lokalnie lub przez SFTP):
 - **PDF przez pdf.js** — ostry zoom, dopasowanie do szerokości, **zaznaczalny tekst** (warstwa tekstowa).
 - **.docx** (docx-preview).
 - **Tekst / Markdown** — z **edycją i zapisem** (zapis lokalnie lub przez SFTP na zdalny host).
+  W plikach `.md` / `.markdown` przycisk **Preview** pokazuje sformatowany dokument,
+  a **Source** przywraca edycję bez utraty niezapisanych zmian. Podgląd dopasowuje się
+  do szerokości panelu, także na pełnym ekranie; obsługuje wyszukiwanie i tryb copy vima.
 - **Tryb copy** (PDF/docx): karetka jak w vimie — `v` włącza kursor, `v` zaznacza, `y` kopiuje;
   w trybie vim sterowanie `hjkl`, zoom `+`/`-`/`0`.
 - Find ⌘F działa też tu (PDF/docx/tekst).

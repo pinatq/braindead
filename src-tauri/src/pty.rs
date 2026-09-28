@@ -21,17 +21,19 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use base64::Engine;
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::agents::{agent_tool, local_agent_dir};
 
 const FLUSH_MS: u64 = 8;
+// Łącznie: kolejka Rusta + IPC + nieprzetworzone dane xterma, na jedną sesję.
+const MAX_PENDING: usize = 256 * 1024;
 /// Etykieta webview interfejsu — jedyny odbiorca zdarzeń pty:*.
 const UI: &str = "ui";
 /// Ile ostatnich bajtów trzymamy, żeby sekwencja alt-screen rozcięta między chunkami
@@ -165,6 +167,37 @@ impl OscScanner {
 struct Outbox {
     data: Vec<u8>,
     alive: bool,
+    cancelled: bool,
+    sent: u64,
+    acknowledged: u64,
+}
+
+impl Outbox {
+    fn pending(&self) -> usize {
+        self.data.len() + (self.sent - self.acknowledged) as usize
+    }
+
+    fn take(&mut self) -> (Vec<u8>, u64) {
+        let data = std::mem::take(&mut self.data);
+        self.sent += data.len() as u64;
+        (data, self.sent)
+    }
+
+    fn acknowledge(&mut self, end: u64) {
+        // Kumulatywne ACK: duplikat/starsze potwierdzenie nie zwalnia bajtów drugi raz.
+        if end <= self.sent {
+            self.acknowledged = self.acknowledged.max(end);
+        }
+    }
+}
+
+fn read_capacity(outbox: &(Mutex<Outbox>, Condvar)) -> usize {
+    let (buf, cv) = outbox;
+    let mut g = lock(buf);
+    while g.alive && !g.cancelled && g.pending() >= MAX_PENDING {
+        g = cv.wait(g).unwrap_or_else(PoisonError::into_inner);
+    }
+    if g.alive && !g.cancelled { (MAX_PENDING - g.pending()).min(8192) } else { 0 }
 }
 // Scrollback kept in memory per session (pty.ts MAX_BUFFER), replayed when ensure hits a
 // live session so a background terminal restores after the view remounts.
@@ -221,9 +254,10 @@ pub struct AgentSsh {
 
 struct Session {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
-    alive: Arc<AtomicBool>,
+    input: mpsc::Sender<String>,
+    killer: Box<dyn ChildKiller + Send + Sync>,
+    outbox: Arc<(Mutex<Outbox>, Condvar)>,
+    generation: u32,
     /// Czy w sesji chodzi program pełnoekranowy (nvim/htop). Renderer bierze to
     /// z odpowiedzi pty_spawn i ze zdarzeń pty:alt — bufor xterma bywa niewiarygodny.
     alt: Arc<AtomicBool>,
@@ -243,14 +277,15 @@ pub struct SpawnResult {
 #[derive(Default)]
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
+    next_generation: AtomicU32,
 }
 
 impl PtyManager {
     /// Tworzy sesję, jeśli jej nie ma. Gdy już istnieje: odtwarza scrollback jako zwykłe
     /// zdarzenie pty:data i zwraca `existed: true` wraz z bieżącym stanem alt-screena.
     pub fn spawn(&self, app: AppHandle, id: String, cols: u16, rows: u16, cwd: Option<String>, agent: Option<AgentOpts>) -> Result<SpawnResult, String> {
+        let mut map = lock(&self.sessions);
         {
-            let mut map = lock(&self.sessions);
             if let Some(s) = map.get_mut(&id) {
                 let alt = s.alt.load(Ordering::Relaxed);
                 // Port pty.ts:77 — remont widoku nad działającym TUI. Program pełnoekranowy
@@ -270,7 +305,8 @@ impl PtyManager {
                 }
                 let buf = lock(&s.scrollback).clone();
                 if !buf.is_empty() {
-                    let _ = app.emit_to(UI, "pty:data", (id.clone(), b64(buf)));
+                    // Replay nie jest nowym wyjściem PTY — nie zwalnia kredytu strumienia.
+                    let _ = app.emit_to(UI, "pty:data", (id.clone(), s.generation, b64(buf), None::<u64>));
                 }
                 return Ok(SpawnResult { existed: true, alt });
             }
@@ -284,32 +320,50 @@ impl PtyManager {
         let mut cmd = build_command(&app, &shell, cwd.as_deref(), agent)?;
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor"); // parytet z Electronem: dziedziczył go z env aplikacji
-        let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         drop(pair.slave); // parent doesn't need the slave fd
 
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-        let alive = Arc::new(AtomicBool::new(true));
         let alt = Arc::new(AtomicBool::new(false));
         let scrollback = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let child = Arc::new(Mutex::new(child));
         let exit_code = Arc::new(AtomicU32::new(0));
         // (bufor wyjścia, budzik dla wątku flushującego)
-        let outbox = Arc::new((Mutex::new(Outbox { data: Vec::new(), alive: true }), Condvar::new()));
+        let outbox = Arc::new((Mutex::new(Outbox { alive: true, ..Outbox::default() }), Condvar::new()));
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        let (input, input_rx) = mpsc::channel::<String>();
+        // Rejestracja przed startem wątków: ACK pierwszej porcji musi już znaleźć sesję.
+        map.insert(id.clone(), Session {
+            master: pair.master, input, killer: child.clone_killer(), outbox: outbox.clone(), generation,
+            alt: alt.clone(), scrollback: scrollback.clone(), cols, rows,
+        });
+        drop(map);
+
+        // Duże wklejenie nie może blokować UI/globalnego mutexa i odcinać ACK wyjścia.
+        // Jeden odbiorca zachowuje kolejność klawiszy, także gdy zapis do PTY czeka.
+        std::thread::spawn(move || {
+            for data in input_rx {
+                if writer.write_all(data.as_bytes()).and_then(|_| writer.flush()).is_err() {
+                    break;
+                }
+            }
+        });
 
         // ── Wątek czytający: blokuje się na PTY, dopisuje do bufora i scrollbacku,
         //    po drodze śledzi wejście/wyjście z ekranu alternatywnego.
         {
-            let (outbox, scrollback, alive, alt) = (outbox.clone(), scrollback.clone(), alive.clone(), alt.clone());
-            let (sessions, child, exit_code) = (self.sessions.clone(), child.clone(), exit_code.clone());
+            let (outbox, scrollback, alt) = (outbox.clone(), scrollback.clone(), alt.clone());
+            let (sessions, exit_code) = (self.sessions.clone(), exit_code.clone());
             let (app, id) = (app.clone(), id.clone());
             std::thread::spawn(move || {
                 let mut chunk = [0u8; 8192];
                 let mut tail: Vec<u8> = Vec::with_capacity(SEQ_TAIL + 8192);
                 let mut osc = OscScanner::default();
                 loop {
-                    let n = match reader.read(&mut chunk) {
+                    let capacity = read_capacity(&outbox);
+                    if capacity == 0 { break; }
+                    let n = match reader.read(&mut chunk[..capacity]) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => n,
                     };
@@ -337,21 +391,24 @@ impl PtyManager {
                     push_scrollback(&mut lock(&scrollback), data);
                     let (buf, cv) = &*outbox;
                     lock(buf).data.extend_from_slice(data);
-                    cv.notify_one();
+                    cv.notify_all();
                 }
                 // EOF = proces skończył. Zbieramy prawdziwy kod wyjścia (Electron: proc.onExit).
-                if let Ok(status) = lock(&child).wait() {
+                if let Ok(status) = child.wait() {
                     exit_code.store(status.exit_code(), Ordering::Relaxed);
                 }
-                alive.store(false, Ordering::Relaxed);
                 // Sesja zamknięta w alt-screenie zostawiłaby renderer z altRef=true na zawsze.
                 if alt.swap(false, Ordering::Relaxed) {
                     let _ = app.emit_to(UI, "pty:alt", serde_json::json!({ "id": id, "alt": false }));
                 }
-                lock(&sessions).remove(&id);
+                let mut map = lock(&sessions);
+                if map.get(&id).is_some_and(|s| s.generation == generation) {
+                    map.remove(&id);
+                }
+                drop(map);
                 let (buf, cv) = &*outbox;
                 lock(buf).alive = false;
-                cv.notify_one();
+                cv.notify_all();
             });
         }
 
@@ -363,7 +420,7 @@ impl PtyManager {
             std::thread::spawn(move || {
                 let (buf, cv) = &*outbox;
                 loop {
-                    let out = {
+                    let (out, end) = {
                         let mut g = lock(buf);
                         while g.data.is_empty() && g.alive {
                             g = cv.wait(g).unwrap_or_else(PoisonError::into_inner);
@@ -371,9 +428,9 @@ impl PtyManager {
                         if g.data.is_empty() && !g.alive {
                             break;
                         }
-                        std::mem::take(&mut g.data)
+                        g.take()
                     };
-                    let _ = app.emit_to(UI, "pty:data", (fid.clone(), b64(out)));
+                    let _ = app.emit_to(UI, "pty:data", (fid.clone(), generation, b64(out), Some(end)));
                     std::thread::sleep(Duration::from_millis(FLUSH_MS));
                 }
                 let _ = app.emit_to(UI, "pty:exit", serde_json::json!({
@@ -382,14 +439,22 @@ impl PtyManager {
             });
         }
 
-        lock(&self.sessions).insert(id, Session { master: pair.master, writer, child, alive, alt, scrollback, cols, rows });
         Ok(SpawnResult { existed: false, alt: false })
     }
 
     pub fn write(&self, id: &str, data: &str) {
-        if let Some(s) = lock(&self.sessions).get_mut(id) {
-            let _ = s.writer.write_all(data.as_bytes());
-            let _ = s.writer.flush();
+        if let Some(s) = lock(&self.sessions).get(id) {
+            let _ = s.input.send(data.to_owned());
+        }
+    }
+
+    pub fn acknowledge(&self, id: &str, generation: u32, end: u64) {
+        if let Some(s) = lock(&self.sessions).get(id) {
+            // Spóźniony callback zamkniętego terminala nie potwierdza danych nowej sesji.
+            if s.generation != generation { return; }
+            let (buf, cv) = &*s.outbox;
+            lock(buf).acknowledge(end);
+            cv.notify_all();
         }
     }
 
@@ -402,9 +467,13 @@ impl PtyManager {
     }
 
     pub fn kill(&self, id: &str) {
-        if let Some(s) = lock(&self.sessions).remove(id) {
-            s.alive.store(false, Ordering::Relaxed);
-            let _ = lock(&s.child).kill(); // drop mastera/writera i tak zamyka pty -> SIGHUP
+        let session = lock(&self.sessions).remove(id);
+        if let Some(mut s) = session {
+            let (buf, cv) = &*s.outbox;
+            lock(buf).cancelled = true;
+            cv.notify_all(); // czytelnik może czekać na ACK, a nie w read()
+            // Osobny uchwyt: wait() w czytelniku nie może zablokować kill() mutexem.
+            let _ = s.killer.kill();
         }
     }
 
@@ -509,6 +578,88 @@ fn dirs_home() -> Option<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{alt_from_chunk, push_scrollback, MAX_SCROLLBACK, SEQ_TAIL};
+
+    #[test]
+    fn flow_control_bounds_preserves_and_unblocks_output() {
+        use super::{lock, read_capacity, Outbox, MAX_PENDING};
+        use std::io::{Cursor, Read};
+        use std::sync::{mpsc, Arc, Condvar, Mutex};
+        use std::time::Duration;
+
+        // Wielokrotnie przekrocz limit; UTF-8 i sekwencje vima przecinają granice porcji.
+        let expected = "\x1b[?1049h\x1b[2Jzażółć 🦀\r\n\x1b[?1049l".repeat(100_000).into_bytes();
+        let source = expected.clone();
+        let outbox = Arc::new((Mutex::new(Outbox { alive: true, ..Outbox::default() }), Condvar::new()));
+        let producer = outbox.clone();
+        let reader = std::thread::spawn(move || {
+            let mut source = Cursor::new(source);
+            let mut chunk = [0; 8192];
+            loop {
+                let capacity = read_capacity(&producer);
+                if capacity == 0 { break; }
+                let n = source.read(&mut chunk[..capacity]).unwrap();
+                let mut state = lock(&producer.0);
+                if n == 0 {
+                    state.alive = false;
+                    producer.1.notify_all();
+                    break;
+                }
+                state.data.extend_from_slice(&chunk[..n]);
+                assert!(state.pending() <= MAX_PENDING);
+                producer.1.notify_all();
+            }
+        });
+
+        // Powolny odbiorca: samo wysłanie do IPC NIE zwalnia miejsca na kolejne dane.
+        let mut state = lock(&outbox.0);
+        while state.pending() < MAX_PENDING {
+            let (next, timeout) = outbox.1.wait_timeout(state, Duration::from_secs(5)).unwrap();
+            assert!(!timeout.timed_out());
+            state = next;
+        }
+        let (mut received, end) = state.take();
+        assert_eq!(state.pending(), MAX_PENDING);
+        state.acknowledge(end + 1); // nie można potwierdzić niewysłanych bajtów
+        state.acknowledge(0);
+        assert_eq!(state.pending(), MAX_PENDING);
+        state.acknowledge(end);
+        state.acknowledge(end); // podwójny callback
+        state.acknowledge(end - 1); // ACK przychodzące w innej kolejności
+        assert_eq!(state.pending(), 0);
+        outbox.1.notify_all();
+        drop(state);
+
+        loop {
+            let mut state = lock(&outbox.0);
+            while state.data.is_empty() && state.alive {
+                let (next, timeout) = outbox.1.wait_timeout(state, Duration::from_secs(5)).unwrap();
+                assert!(!timeout.timed_out());
+                state = next;
+            }
+            if state.data.is_empty() && !state.alive { break; }
+            let (data, end) = state.take();
+            received.extend_from_slice(&data);
+            state.acknowledge(end);
+            outbox.1.notify_all();
+        }
+        reader.join().unwrap();
+        assert_eq!(received, expected, "każdy bajt musi dotrzeć, w tej samej kolejności");
+
+        // Pauza jednej sesji nie zatrzymuje drugiej; zamknięcie budzi czekający wątek.
+        let paused = Arc::new((Mutex::new(Outbox {
+            alive: true, sent: MAX_PENDING as u64, ..Outbox::default()
+        }), Condvar::new()));
+        let other = (Mutex::new(Outbox { alive: true, ..Outbox::default() }), Condvar::new());
+        assert_eq!(read_capacity(&other), 8192);
+        let waiting = paused.clone();
+        let (tx, rx) = mpsc::channel();
+        let reader = std::thread::spawn(move || tx.send(read_capacity(&waiting)).unwrap());
+        assert!(rx.recv_timeout(Duration::from_millis(30)).is_err());
+        lock(&paused.0).cancelled = true;
+        paused.1.notify_all();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), 0);
+        reader.join().unwrap();
+    }
 
     #[test]
     fn scrollback_trzyma_limit_i_zachowuje_ogon() {

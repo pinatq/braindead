@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useStore } from '../state/store'
 import { matchVimKey, isDoubleFirst, WIN_MOTION_IDS, type DoubleState } from '../../../shared/vimKeys'
@@ -116,6 +117,15 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
     term.open(host)
+    // Renderer GPU zamiast domyślnego DOM (tysiące <span> przy każdym przerysowaniu TUI
+    // Claude Code => lag i puchnący RAM WebKita). Po utracie kontekstu wracamy do DOM.
+    try {
+      const gl = new WebglAddon()
+      gl.onContextLoss(() => gl.dispose())
+      term.loadAddon(gl)
+    } catch {
+      // ponytail: brak WebGL => zostaje renderer DOM
+    }
     termRef.current = term
     setTermTick((t) => t + 1)
 
@@ -383,8 +393,8 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
 
     // Subskrybujemy dane PTY ZANIM wywołamy ensure — main odsyła pełny bufor (replay)
     // dopiero po naszej subskrypcji, więc nie zgubimy historii.
-    const offData = window.api.pty.onData(({ id, data }) => {
-      if (id === ptyId) term.write(data)
+    const offData = window.api.pty.onData(ptyId, ({ data, acknowledge }) => {
+      term.write(data, acknowledge)
     })
     const offAlt = window.api.pty.onAlt(({ id, alt }) => {
       if (id !== ptyId) return

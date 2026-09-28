@@ -30,7 +30,10 @@ import type {
 } from '../../shared/types'
 
 // Fan-out subscriber sets (avoid MaxListeners-style duplication across up to 16 panes).
-const dataCbs = new Set<(e: PtyDataEvent) => void>()
+const dataCbs = new Map<string, {
+  cb: (e: PtyDataEvent) => void
+  pending: Set<() => void>
+}>()
 const exitCbs = new Set<(e: PtyExitEvent) => void>()
 // Wejście/wyjście programu pełnoekranowego (nvim/htop) — vim mode ma wtedy odpuścić klawisze.
 const altCbs = new Set<(e: PtyAltEvent) => void>()
@@ -53,9 +56,7 @@ const paneWinMotionCbs = new Set<(e: { id: string; act: string }) => void>()
 const paneWinPrefixCbs = new Set<(e: { id: string }) => void>()
 const paneVimHelloCbs = new Set<(e: { id: string }) => void>()
 
-// PTY output arrives base64 (raw bytes survive the JSON event boundary). A per-terminal
-// streaming UTF-8 decoder reassembles multibyte sequences split across 8ms flush batches.
-const decoders = new Map<string, TextDecoder>()
+// Surowe bajty dekoduje sam xterm (również UTF-8 rozcięte między porcjami).
 // ponytail: zwykla petla zamiast Uint8Array.from(atob(b), cb) — wariant z callbackiem wola
 // funkcje na KAZDY bajt. To leci na watku glownym UI, wiec przepustowosc tego dekodera jest
 // sufitem na to, jak szybko terminal moze sypac bez zacinania interfejsu.
@@ -70,18 +71,24 @@ const b64ToBytes = (b: string): Uint8Array => {
   return u
 }
 
-void listen<[string, string]>('pty:data', (e) => {
-  const [id, b64] = e.payload
-  let dec = decoders.get(id)
-  if (!dec) {
-    dec = new TextDecoder('utf-8')
-    decoders.set(id, dec)
+const ptyDataReady = listen<[string, number, string, number | null]>('pty:data', (e) => {
+  const [id, generation, b64, end] = e.payload
+  const sub = dataCbs.get(id)
+  let done = false
+  const acknowledge = (): void => {
+    if (done) return
+    done = true
+    sub?.pending.delete(acknowledge)
+    if (end !== null) {
+      void invoke('pty_ack', { id, generation, end }).catch(paneErr('pty_ack'))
+    }
   }
-  const data = dec.decode(b64ToBytes(b64), { stream: true })
-  if (data) dataCbs.forEach((cb) => cb({ id, data }))
+  // Bez widoku sesja działa dalej; Rust już zachował porcję w swoim scrollbacku.
+  if (!sub) { acknowledge(); return }
+  sub.pending.add(acknowledge)
+  sub.cb({ id, data: b64ToBytes(b64), acknowledge })
 })
 void listen<PtyExitEvent>('pty:exit', (e) => {
-  decoders.delete(e.payload.id)
   exitCbs.forEach((cb) => cb(e.payload))
 })
 void listen<PtyAltEvent>('pty:alt', (e) => altCbs.forEach((cb) => cb(e.payload)))
@@ -124,14 +131,16 @@ const api = {
     // Zwraca `{ existed, alt }` — `alt` mówi, czy w żywej sesji chodzi program
     // pełnoekranowy. Przy re-attachu backend odtwarza scrollback zwykłym zdarzeniem
     // pty:data (nasłuch stoi od załadowania modułu, więc nic nie ginie).
-    ensure: (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean; alt: boolean }> =>
-      invoke('pty_spawn', {
+    ensure: async (id: string, opts: PtyEnsureOpts): Promise<{ existed: boolean; alt: boolean }> => {
+      await ptyDataReady // pierwsza porcja nie może wyprzedzić rejestracji nasłuchu
+      return invoke('pty_spawn', {
         id,
         cols: opts.cols,
         rows: opts.rows,
         cwd: opts.cwd ?? null,
         agent: opts.agent ?? null
-      }),
+      })
+    },
     input: (id: string, data: string): void => {
       void invoke('pty_write', { id, data })
     },
@@ -141,9 +150,15 @@ const api = {
     kill: (id: string): void => {
       void invoke('pty_kill', { id })
     },
-    onData: (cb: (e: PtyDataEvent) => void): (() => void) => {
-      dataCbs.add(cb)
-      return () => void dataCbs.delete(cb)
+    onData: (id: string, cb: (e: PtyDataEvent) => void): (() => void) => {
+      const sub = { cb, pending: new Set<() => void>() }
+      dataCbs.set(id, sub)
+      return () => {
+        if (dataCbs.get(id) === sub) dataCbs.delete(id)
+        // dispose() xterma nie odpala callbacków oczekujących write(). Zwolnij kredyt,
+        // żeby przełączenie trybu/eco nie zostawiło żywego procesu w pauzie na zawsze.
+        sub.pending.forEach((acknowledge) => acknowledge())
+      }
     },
     onExit: (cb: (e: PtyExitEvent) => void): (() => void) => {
       exitCbs.add(cb)
