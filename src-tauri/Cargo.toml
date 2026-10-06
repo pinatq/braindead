@@ -1,6 +1,6 @@
 [package]
 name = "braindead"
-version = "0.1.3"
+version = "0.1.4"
 description = "Tiling multiplexer of terminals, browsers, file viewer/explorer and AI CLIs"
 authors = ["pinatq"]
 license = "MIT"

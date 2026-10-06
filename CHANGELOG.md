@@ -1,5 +1,33 @@
 # Historia zmian
 
+## 0.1.4 — 2026-10-07
+
+### Terminale i agenci AI
+
+- Naprawiono litery zamieniające się w fragmenty innych znaków po dłuższej pracy,
+  zwłaszcza z Claude Code i Codexem. Renderer WebGL z xterm 5.5 po scaleniu stron
+  atlasu glifów potrafił zostawić w GPU nieaktualną teksturę. Teraz po każdej nowej
+  stronie atlasu terminal wgrywa tekstury ponownie.
+- Szerokość znaków jest liczona tak jak w agentach (Unicode 11): emoji takie jak
+  ✅ ❌ ✨ 🚀 zajmują dwie kolumny, więc przerysowywany interfejs nie zostawia śmieci,
+  a kursor nie przesuwa się w bok.
+- Animowany kursor przesuwa się razem z przewijanym tekstem i znika, gdy wyjdzie
+  poza widok albo gdy program go ukryje (Claude Code i Codex rysują własny kursor).
+  Wcześniej zostawał na środku ekranu albo kilka kolumn obok pola wpisywania.
+
+### Sprawdzenie wydania
+
+- Nowy test renderowania terminala w Chrome: scalanie stron atlasu bez nieaktualnych
+  tekstur, szerokość emoji, kursor przy przewijaniu i ukrywaniu. Test nie przechodzi
+  po wycofaniu którejkolwiek z tych trzech poprawek.
+- 13 testów Rust, test mostka PTY i test podglądu Markdown w Chrome.
+- Sprawdzenie typów TypeScript i kompilacja produkcyjna.
+
+Błąd atlasu odtworzono w Chrome na tym samym kodzie xterm. W aplikacji na macOS
+(WKWebView) nie przeprowadzono wielogodzinnej sesji z agentami.
+
+Wydania macOS mają podpis ad-hoc, bez notaryzacji Apple.
+
 ## 0.1.3 — 2026-09-28
 
 ### Terminale i agenci AI

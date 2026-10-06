@@ -24,25 +24,25 @@ xterm.js; browser: the system's native webview; PDF: pdf.js).
 
 ## ⬇️ Download
 
-Current version: **0.1.3**. [Changelog](CHANGELOG.md).
+Current version: **0.1.4**. [Changelog](CHANGELOG.md).
 
 Click your platform, then install as usual.
 
 | Platform | Download | Install |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.3_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_aarch64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
-| **macOS — Intel** (x86_64) | [BrainDead_0.1.3_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
-| **Windows 10/11** (x64) | [BrainDead_0.1.3_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64-setup.exe) | run the installer, pick a folder, next → next |
-| **Linux — AppImage** (any distro) | [BrainDead_0.1.3_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.4_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_aarch64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
+| **macOS — Intel** (x86_64) | [BrainDead_0.1.4_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_x64.dmg) | open the `.dmg`, drag **BrainDead.app** to **Applications** |
+| **Windows 10/11** (x64) | [BrainDead_0.1.4_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_x64-setup.exe) | run the installer, pick a folder, next → next |
+| **Linux — AppImage** (any distro) | [BrainDead_0.1.4_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
 
 ### Linux — via your package manager
 
 ```bash
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead_0.1.3_amd64.deb      # or:  sudo dpkg -i BrainDead_0.1.3_amd64.deb
+sudo apt install ./BrainDead_0.1.4_amd64.deb      # or:  sudo dpkg -i BrainDead_0.1.4_amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.1.3-1.x86_64.rpm   # or:  sudo rpm -i BrainDead-0.1.3-1.x86_64.rpm
+sudo dnf install ./BrainDead-0.1.4-1.x86_64.rpm   # or:  sudo rpm -i BrainDead-0.1.4-1.x86_64.rpm
 ```
 
 > **macOS note** — the build is **not** signed with a Developer ID (ad-hoc signature only). On first
@@ -649,6 +649,7 @@ are discarded. History replay uses the existing separate scrollback buffer.
 | `cargo test --manifest-path src-tauri/Cargo.toml` | self-checks: flow control, alternate-screen tracking and natural sort |
 | `node scripts/pty-flow-check.mjs` | frontend PTY acknowledgements and view lifecycle checks |
 | `node scripts/markdown-viewer-check.mjs` | Markdown preview, draft preservation, save, vim and safety checks in Chrome (`CHROME_BIN` overrides its path) |
+| `node scripts/terminal-render-check.mjs` | terminal rendering in Chrome: WebGL glyph atlas after page merges, emoji widths, smear cursor on scroll and `ESC[?25l` |
 | `npx tauri icon <png>` | regenerates every icon size from one source PNG |
 
 Tauri cannot cross-compile the webview, so each OS builds on its own machine —

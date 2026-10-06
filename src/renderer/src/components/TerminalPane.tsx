@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
@@ -116,12 +117,31 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
+    // Szerokości znaków jak w Claude Code i Codexie: domyślne tabele xterma (Unicode 6) liczą
+    // emoji (✅ ❌ ✨ 🚀) za 1 kolumnę, agenty za 2. Wtedy TUI przerysowuje w złych kolumnach,
+    // zostają śmieci, a kursor ląduje kilka kolumn dalej.
+    term.loadAddon(new Unicode11Addon())
+    term.unicode.activeVersion = '11'
     term.open(host)
     // Renderer GPU zamiast domyślnego DOM (tysiące <span> przy każdym przerysowaniu TUI
     // Claude Code => lag i puchnący RAM WebKita). Po utracie kontekstu wracamy do DOM.
+    let atlasFix: ReturnType<typeof setTimeout> | undefined
     try {
       const gl = new WebglAddon()
       gl.onContextLoss(() => gl.dispose())
+      // Błąd xterma 5.5: przy scalaniu stron atlasu glifów numery wersji stron się powtarzają
+      // i GPU zostaje ze starą teksturą — litery zamieniają się w kawałki innych liter. Atlas
+      // rośnie z każdym nowym kolorem, więc agenty (tęczowe spinnery, kolorowe diffy) trafiają
+      // na to po dłuższej sesji. Przypisanie motywu (te same wartości) każe rendererowi wgrać
+      // wszystkie strony od nowa. Atlas jest wspólny dla terminali, ale zdarzenie dostaje
+      // każdy z nich, więc każdy odświeża się sam.
+      // ponytail: usunąć po przejściu na xterm z poprawką (6.1: globalne AtlasPage.version).
+      gl.onAddTextureAtlasCanvas(() => {
+        atlasFix ??= setTimeout(() => {
+          atlasFix = undefined
+          term.options.theme = { ...term.options.theme }
+        })
+      })
       term.loadAddon(gl)
     } catch {
       // ponytail: brak WebGL => zostaje renderer DOM
@@ -442,6 +462,7 @@ export default function TerminalPane({ paneId, ptyKey, agent }: Props): JSX.Elem
     return () => {
       // Tylko czyścimy widok — NIE killujemy PTY (może działać w tle).
       cancelAnimationFrame(pierwszyFit)
+      clearTimeout(atlasFix)
       offData()
       offAlt()
       onInput.dispose()

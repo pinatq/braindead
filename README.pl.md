@@ -26,25 +26,25 @@ w Ruście + xterm.js, przeglądarka: natywne webview systemu, PDF: pdf.js).
 
 ## ⬇️ Pobieranie
 
-Aktualna wersja: **0.1.3**. [Historia zmian](CHANGELOG.md).
+Aktualna wersja: **0.1.4**. [Historia zmian](CHANGELOG.md).
 
 Kliknij swoją platformę i zainstaluj jak każdą inną aplikację.
 
 | Platforma | Pobierz | Instalacja |
 |---|---|---|
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.3_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_aarch64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **macOS — Intel** (x86_64) | [BrainDead_0.1.3_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
-| **Windows 10/11** (x64) | [BrainDead_0.1.3_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_x64-setup.exe) | uruchom instalator, wybierz folder, dalej → dalej |
-| **Linux — AppImage** (każda dystrybucja) | [BrainDead_0.1.3_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.3_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | [BrainDead_0.1.4_aarch64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_aarch64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **macOS — Intel** (x86_64) | [BrainDead_0.1.4_x64.dmg](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_x64.dmg) | otwórz `.dmg`, przeciągnij **BrainDead.app** do **Aplikacji** |
+| **Windows 10/11** (x64) | [BrainDead_0.1.4_x64-setup.exe](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_x64-setup.exe) | uruchom instalator, wybierz folder, dalej → dalej |
+| **Linux — AppImage** (każda dystrybucja) | [BrainDead_0.1.4_amd64.AppImage](https://github.com/pinatq/braindead/releases/latest/download/BrainDead_0.1.4_amd64.AppImage) | `chmod +x BrainDead_*.AppImage && ./BrainDead_*.AppImage` |
 
 ### Linux — przez menedżer pakietów
 
 ```bash
 # Ubuntu / Debian / Pop!_OS
-sudo apt install ./BrainDead_0.1.3_amd64.deb      # albo:  sudo dpkg -i BrainDead_0.1.3_amd64.deb
+sudo apt install ./BrainDead_0.1.4_amd64.deb      # albo:  sudo dpkg -i BrainDead_0.1.4_amd64.deb
 
 # Fedora / RHEL / openSUSE
-sudo dnf install ./BrainDead-0.1.3-1.x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.1.3-1.x86_64.rpm
+sudo dnf install ./BrainDead-0.1.4-1.x86_64.rpm     # albo:  sudo rpm -i BrainDead-0.1.4-1.x86_64.rpm
 ```
 
 > **Uwaga macOS** — build **nie jest** podpisany Developer ID (tylko podpis ad-hoc). Przy pierwszym
